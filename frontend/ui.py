@@ -16,7 +16,7 @@ if "messages" not in st.session_state:
     st.session_state.messages = [
         {
             "role": "assistant", 
-            "content": "안녕하세요, 장혁 님! GitInsight 모의 면접 튜터입니다. 분석을 원하시는 GitHub Repository URL을 왼쪽에 입력하고 질문을 시작해 보세요!"
+            "content": "안녕하세요, 민우 님! GitInsight 모의 면접 튜터입니다. 분석을 원하시는 GitHub Repository URL을 왼쪽에 입력하고 질문을 시작해 보세요!"
         }
     ]
 if "tech_stack" not in st.session_state:
