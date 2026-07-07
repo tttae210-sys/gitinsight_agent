@@ -1,6 +1,7 @@
 import json
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_upstage import ChatUpstage
+# 💡 graph.py와 맞춰서 schemas 구조 그대로 유지
 from app.schemas import InterviewState
 from app.prompts.templates import EVALUATOR_PROMPT, FEEDBACK_GEN_PROMPT
 from app.core.config import Config
@@ -19,7 +20,7 @@ def evaluation_node(state: InterviewState) -> dict:
     # 방금 유저가 입력한 최신 답변 가져오기
     user_answer = answer_history[-1] if answer_history else ""
     
-    print(f"\n[DEBUG] 유저 답변 평가 중... (현재 Loop: {loop_count + 1} / {Config.MAX_LOOP_COUNT})")
+    print(f"\n[DEBUG] 유저 답변 평가 중... (현재 Loop: {loop_count} / {Config.MAX_LOOP_COUNT})")
     
     # 평가 프롬프트에 질문과 유저 답변 맵핑
     eval_prompt = EVALUATOR_PROMPT.format(
@@ -44,10 +45,10 @@ def evaluation_node(state: InterviewState) -> dict:
         
     print(f"[DEBUG] 평가 결과: {eval_result['status']} | 사유: {eval_result.get('reason', '')}")
     
-    # 상태 업데이트: 루프 카운트 증가 및 평가 결과 저장
+    # 💥 버그 수정: loop_count + 1을 제거했습니다! 
+    # 카운트 증가는 extractor.py에서 전담하므로 여기서는 평가 결과만 쏙 업데이트합니다.
     return {
-        "evaluation": eval_result,
-        "loop_count": loop_count + 1
+        "evaluation": eval_result
     }
 
 def feedback_gen_node(state: InterviewState) -> dict:

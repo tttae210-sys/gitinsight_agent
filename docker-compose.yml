@@ -1,13 +1,37 @@
+version: '3.8'
+
 services:
+  # 백엔드 API 서비스
   api:
-    build: {context: ., dockerfile: Dockerfile.api}
-    ports: ['8001:8001']
-    env_file: [.env]
-    volumes: [chroma_data:/app/chroma_data]
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: gitinsight_api
+    ports:
+      - '8000:8000'
+    volumes:
+      - ./app:/app/app # 코드 수정 시 컨테이너에 즉시 반영 (Hot-reload)
+      - ./data:/app/data # 데이터 폴더 동기화
+    env_file: .env # 환경변수 로드
+    networks:
+      - gitinsight_net
+
+  # 프론트엔드 UI 서비스
   frontend:
-    build: {context: ., dockerfile: Dockerfile.frontend}
-    ports: ['8002:8002']
-    environment: [BACKEND_URL=http://api:8001]
-    depends_on: [api]
-volumes:
-  chroma_data:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: gitinsight_frontend
+    ports:
+      - '8501:8501'
+    volumes:
+      - ./frontend:/app/frontend
+    env_file: .env
+    depends_on:
+      - api # api가 먼저 켜져야 frontend가 실행됨
+    networks:
+      - gitinsight_net
+
+networks:
+  gitinsight_net:
+    driver: bridge

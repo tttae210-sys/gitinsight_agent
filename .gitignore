@@ -1,13 +1,24 @@
-# --- [GitInsight Agent 맞춤 추가 설정] ---
+# --- [GitInsight Agent 표준 .gitignore 설정] ---
 
-# 1. 로컬 벡터 DB 데이터 (ChromaDB)
-# 용량이 매우 크고 각자의 환경에서 생성되어야 하므로 깃허브 업로드 방지
+# 1. 환경 변수 및 보안 파일 (가장 중요)
+.env
+.env.local
+
+# 2. 로컬 벡터 DB 데이터 (ChromaDB)
 chroma_db/
 
-# 2. 맥북 OS 시스템 파일
-# 맥북 환경에서 폴더를 열 때마다 자동 생성되는 숨김 파일 방지
+# 3. 맥북 OS 시스템 파일
 .DS_Store
 
+<<<<<<< HEAD
 # 3. VS Code 에디터 설정
 # 팀원들마다 에디터 설정이 다를 수 있으므로 충돌 방지
 .vscode/
+=======
+# 4. VS Code 에디터 설정
+.vscode/
+
+# 5. 파이썬 캐시 파일
+__pycache__/
+*.pyc
+>>>>>>> 74892cc (feat: 표준 구조 적용, API 규격 통합 및 .gitignore 보안 설정)
