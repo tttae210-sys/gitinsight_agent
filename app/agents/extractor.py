@@ -1,4 +1,4 @@
-from app.state import InterviewState
+from app.schemas import InterviewState
 from langchain_core.prompts import ChatPromptTemplate
 from app.core.llm import get_llm
 
