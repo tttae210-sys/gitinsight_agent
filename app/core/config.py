@@ -28,3 +28,12 @@ class Settings(BaseSettings):
 
 # 팀원들이 전역에서 'from app.core.config import settings'로 사용할 인스턴스
 settings = Settings()
+
+# 💡 [하위 호환성 추가] 옛날에 작성된 Config 호출 코드가 터지지 않도록 매핑합니다.
+Config = settings
+# 💡 [CORS 에러 방어] main.py에서 CORS 설정을 정상적으로 가져갈 수 있도록 상수를 추가합니다.
+CORS_ORIGINS = ["*"]
+# 💡 [데이터베이스 에러 방어] database.py에서 요구하는 크로마 DB 설정을 기본값으로 추가합니다.
+CHROMA_MODE: str = "local"
+CHROMA_HOST: str = "localhost"
+CHROMA_PORT: int = 8000

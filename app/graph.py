@@ -99,3 +99,7 @@ if __name__ == "__main__":
             print(node_state)
             
     print("\n[SYSTEM] 워크플로우 종료.")
+
+    # 💡 [하위 호환성 추가] 옛날에 작성된 create_graph() 호출 코드가 터지지 않도록 컴파일된 app 객체를 반환합니다.
+def create_graph():
+    return app
