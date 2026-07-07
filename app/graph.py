@@ -1,11 +1,13 @@
 from langgraph.graph import StateGraph, END
+from app.agents.responder import evaluation_node
 from app.schemas import InterviewState
 from app.core.config import Config
 
 # 에이전트 노드들 불러오기
-from app.agents.query_analyzer import intent_classifier_node
-from app.agents.retrieval import code_build_node, interview_extract_node
-from app.agents.responder import evaluation_node, feedback_gen_node
+from app.agents.classifier import classify_user_intent
+from app.agents.builder import build_github_repo
+from app.agents.extractor import extract_interview_question
+from app.agents.feedback import generate_feedback_report
 
 def route_from_intent(state: InterviewState):
     """URL 유무에 따라 메인 파이프라인으로 갈지 종료할지 결정하는 라우터"""
@@ -32,11 +34,11 @@ def route_from_eval(state: InterviewState):
 workflow = StateGraph(InterviewState)
 
 # 2. 노드(에이전트) 등록
-workflow.add_node("intent_classifier", intent_classifier_node)
-workflow.add_node("code_build", code_build_node)
-workflow.add_node("interview_extract", interview_extract_node)
-workflow.add_node("evaluation", evaluation_node)
-workflow.add_node("feedback_gen", feedback_gen_node)
+workflow.add_node("intent_classifier", classify_user_intent) # 자율 라우터
+workflow.add_node("code_build", build_github_repo)           # GitHub 분석기
+workflow.add_node("interview_extract", extract_interview_question) # Solar 면접관
+workflow.add_node("evaluation", evaluation_node)             # 기존 답변 평가기
+workflow.add_node("feedback_gen", generate_feedback_report)   # 종합 피드백 리포터
 
 # 3. 엣지(흐름) 연결
 # 시작점 설정
