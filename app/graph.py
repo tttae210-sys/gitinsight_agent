@@ -10,10 +10,15 @@ from app.agents.extractor import extract_interview_question
 from app.agents.feedback import generate_feedback_report
 
 def route_from_intent(state: InterviewState):
-    """URL 유무에 따라 메인 파이프라인으로 갈지 종료할지 결정하는 라우터"""
+    """현재 요청이 새 분석인지, 기존 질문에 대한 답변인지 분기한다."""
+    if state.get("next_step") == "ANSWER" and state.get("current_question"):
+        print("[ROUTE] 기존 면접 질문에 대한 답변 감지 -> 평가 단계로 이동")
+        return "evaluation"
+
     if state.get("repo_url"):
         print("[ROUTE] URL 감지 완료 -> CodeBuildAgent로 이동")
         return "code_build"
+
     print("[ROUTE] 일반 대화 -> 프로세스 종료 (유저 응답 대기)")
     return END
 
@@ -50,15 +55,14 @@ workflow.add_conditional_edges(
     route_from_intent,
     {
         "code_build": "code_build",
+        "evaluation": "evaluation",
         END: END
     }
 )
 
-# 코드 빌드 완료 후 바로 질문 추출 단계로 이동
+# 코드 빌드 완료 후 첫 질문만 생성하고 사용자 답변을 기다린다.
 workflow.add_edge("code_build", "interview_extract")
-
-# 면접 질문 출제 후 평가로 이동 (실제 서비스에서는 이 사이에 유저 입력을 받는 인터럽트가 들어갑니다)
-workflow.add_edge("interview_extract", "evaluation")
+workflow.add_edge("interview_extract", END)
 
 # 평가 결과 -> 튜터링 루프(재순환) 또는 최종 리포트로 분기
 workflow.add_conditional_edges(

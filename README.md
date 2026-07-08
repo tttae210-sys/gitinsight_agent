@@ -1,23 +1,43 @@
-# AI QA Agent API 🤖
+# GitInsight Agent
 
-FastAPI와 LangGraph 기반의 지능형 질의응답(QA) 에이전트 백엔드 시스템입니다. 
-사용자의 질문 의도를 분석하고(`query_analyzer.py`), 필요한 경우 저장된 지식 기반에서 관련 정보를 검색(`retrieval.py`)하여, 최적의 답변을 생성(`responder.py`)하는 유연한 워크플로우를 제공합니다.
+GitHub 레포지토리의 핵심 소스 코드를 수집하고, RAG 기반 문맥으로 기술 면접 질문과 답변 피드백을 생성하는 FastAPI + LangGraph 프로젝트입니다.
 
-## 🧑‍💻 Contributors
-- 이장혁
-- 서용수
-- 박태경
-- 조채환
+## 주요 기능
 
-## 🚀 Tech Stack
-- **Backend Framework**: FastAPI (Python)
-- **AI / Workflow**: LangGraph, LangChain
-- **Containerization**: Docker, Docker Compose
-- **Vector Store**: (사용 중인 벡터 DB 이름 작성)
+- GitHub Repository URL 감지 및 분석 워크플로우 트리거
+- 최신 commit hash 기준 코드 청크 캐싱
+- ChromaDB 기반 코드 청크 검색
+- 코드 문맥 기반 기술 면접 질문 생성
+- 사용자 답변 평가, 최대 3회 튜터링 루프, 최종 피드백 리포트 생성
+- Streamlit 기반 모의 면접 UI
 
-## 📦 시작하기 (Getting Started)
+## Tech Stack
 
-1. **의존성 설치**
-   패키지 매니저(uv 등)를 활용하여 환경을 세팅합니다.
-   ```bash
-   uv sync
+- Backend: FastAPI
+- Agent Workflow: LangGraph, LangChain
+- LLM/Embedding: Upstage Solar
+- Vector Store: ChromaDB
+- Frontend: Streamlit
+- Runtime/Package Manager: uv
+
+## 실행 방법
+
+1. `.env` 파일에 `UPSTAGE_API_KEY`를 설정합니다.
+2. 로컬 실행:
+
+```bash
+./start.sh
+```
+
+3. 접속 주소:
+
+- Backend: http://localhost:8000
+- Frontend: http://localhost:8501
+
+## Docker Compose
+
+```bash
+docker compose up --build
+```
+
+Frontend 컨테이너는 `API_BASE_URL=http://api:8000/api/v1`로 백엔드 API를 호출합니다.

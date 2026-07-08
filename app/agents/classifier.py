@@ -5,6 +5,9 @@ from app.core.llm import get_llm
 
 def classify_user_intent(state: InterviewState) -> dict:
     """유저의 입력을 분석하여 START(시작/링크), ANSWER(면접답변), CHAT(일반대화)으로 분류합니다."""
+    if state.get("next_step") == "ANSWER":
+        return {"next_step": "ANSWER"}
+
     llm = get_llm(temperature=0.0)
     
     # 최근 유저 입력 가져오기
@@ -38,4 +41,10 @@ def classify_user_intent(state: InterviewState) -> dict:
     if "ANSWER" in intent:
         return {"next_step": "ANSWER"}
     else:
-        return {"next_step": "CHAT"}
+        return {
+            "next_step": "CHAT",
+            "current_question": (
+                "안녕하세요! GitInsight 모의 면접 튜터입니다. "
+                "분석할 GitHub Repository URL을 입력해 주시면 코드 기반 기술 면접 질문을 만들어드릴게요."
+            ),
+        }

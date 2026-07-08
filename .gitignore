@@ -1,24 +1,17 @@
-# --- [GitInsight Agent 표준 .gitignore 설정] ---
-
-# 1. 환경 변수 및 보안 파일 (가장 중요)
+# Environment and secrets
 .env
 .env.local
 
-# 2. 로컬 벡터 DB 데이터 (ChromaDB)
-chroma_db/
-
-# 3. 맥북 OS 시스템 파일
-.DS_Store
-
-<<<<<<< HEAD
-# 3. VS Code 에디터 설정
-# 팀원들마다 에디터 설정이 다를 수 있으므로 충돌 방지
-.vscode/
-=======
-# 4. VS Code 에디터 설정
-.vscode/
-
-# 5. 파이썬 캐시 파일
+# Python
+.venv/
+venv/
 __pycache__/
 *.pyc
->>>>>>> 74892cc (feat: 표준 구조 적용, API 규격 통합 및 .gitignore 보안 설정)
+
+# Local vector databases
+chroma_db/
+chroma_data/
+
+# Editors and OS files
+.vscode/
+.DS_Store

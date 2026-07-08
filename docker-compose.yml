@@ -27,6 +27,8 @@ services:
     volumes:
       - ./frontend:/app/frontend
     env_file: .env
+    environment:
+      - API_BASE_URL=http://api:8000/api/v1
     depends_on:
       - api # api가 먼저 켜져야 frontend가 실행됨
     networks:

@@ -1,6 +1,7 @@
 import requests
 import re
 from app.schemas import InterviewState
+from app.service.vector_service import get_vector_service
 
 def build_github_repo(state: InterviewState) -> dict:
     """GitHub API를 사용해 레포지토리의 소스코드를 수집하고 기술 스택을 분석합니다."""
@@ -24,6 +25,28 @@ def build_github_repo(state: InterviewState) -> dict:
             commit_hash = commit_res[0].get("sha", "latest")
     except Exception:
         pass
+
+    vs = get_vector_service()
+    cache_filters = {"$and": [{"repo_url": repo_url}, {"commit_hash": commit_hash}]}
+    if vs.has_documents(cache_filters):
+        cached_chunks = vs.search(
+            query=f"{owner}/{repo} 주요 코드",
+            filters=cache_filters,
+            n_results=3,
+        )
+        return {
+            "tech_stack": ["Cached Repository"],
+            "extracted_chunks": [
+                {
+                    "file_path": item.get("file_path", ""),
+                    "code": item.get("content", ""),
+                    "content": item.get("content", ""),
+                    "desc": "캐시된 코드 청크",
+                }
+                for item in cached_chunks
+            ],
+            "repo_commit_hash": commit_hash,
+        }
 
     # 2. GitHub API를 통해 레포지토리 파일 트리 가져오기 (재귀적 탐색)
     tree_url = f"https://api.github.com/repos/{owner}/{repo}/git/trees/{commit_hash}?recursive=1"
@@ -60,6 +83,7 @@ def build_github_repo(state: InterviewState) -> dict:
                     extracted_chunks.append({
                         "file_path": path,
                         "code": code_content,
+                        "content": code_content,
                         "desc": f"{path} 소스코드 일부"
                     })
                     code_file_count += 1
@@ -70,7 +94,20 @@ def build_github_repo(state: InterviewState) -> dict:
     # 기본 기술 스택 방어 로직
     if not tech_stack:
         tech_stack.add("Python (Default)")
-        
+
+    # ── RAG 연동: 수집한 코드 청크를 ChromaDB에 저장 ──────────────────────────
+    if extracted_chunks:
+        indexed_count = vs.index_documents(
+            chunks=extracted_chunks,
+            metadata={
+                "repo_url": repo_url,
+                "commit_hash": commit_hash,   # 캐싱 및 버전 필터링용
+            },
+        )
+        print(f"[builder] ChromaDB 저장 완료: {indexed_count}개 청크 "
+              f"(repo: {repo_url}, commit: {commit_hash[:7]})")
+    # ──────────────────────────────────────────────────────────────────────────
+
     return {
         "tech_stack": list(tech_stack),
         "extracted_chunks": extracted_chunks,

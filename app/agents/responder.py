@@ -39,9 +39,14 @@ def evaluation_node(state: InterviewState) -> dict:
         print("[DEBUG] JSON 파싱 에러 발생, 기본값으로 대체합니다.")
         eval_result = {
             "status": "FAIL", 
+            "score": 0,
+            "is_satisfied": False,
             "reason": "응답 포맷 오류", 
             "hint": "답변을 조금 더 구체적인 기술 키워드를 포함해서 다시 설명해주시겠어요?"
         }
+
+    eval_result.setdefault("score", 10 if eval_result.get("status") == "PASS" else 0)
+    eval_result.setdefault("is_satisfied", eval_result.get("status") == "PASS")
         
     print(f"[DEBUG] 평가 결과: {eval_result['status']} | 사유: {eval_result.get('reason', '')}")
     
