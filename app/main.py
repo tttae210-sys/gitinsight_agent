@@ -10,9 +10,11 @@ async def lifespan(app: FastAPI):
     seed_if_empty()
     yield
 
-app = FastAPI(title="Medical QA Agent API", version="1.0.0", lifespan=lifespan)
+# [수정됨] title을 Medical QA에서 GitInsight Agent API로 변경
+app = FastAPI(title="GitInsight Agent API", version="1.0.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.include_router(router, prefix="/api/v1", tags=["chat"])
 
 @app.get("/health")
-def health(): return {"status": "healthy"}
+def health(): 
+    return {"status": "healthy"}

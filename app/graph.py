@@ -76,10 +76,9 @@ workflow.add_edge("feedback_gen", END)
 # 4. 그래프 컴파일
 app = workflow.compile()
 
-# ... (기존 코드 app = workflow.compile() 아래에 이어붙이기) ...
-
 if __name__ == "__main__":
-    print("\n[SYSTEM] '이게뭐조' 멀티 에이전트 워크플로우 시스템을 시작합니다...")
+    # [수정됨] 프로젝트 이름을 GitInsight로 변경
+    print("\n[SYSTEM] 'GitInsight' 멀티 에이전트 워크플로우 시스템을 시작합니다...")
     
     # 테스트용 초기 상태 (URL이 없는 일반 인사말을 던져봅니다)
     initial_state = {
@@ -101,7 +100,3 @@ if __name__ == "__main__":
             print(node_state)
             
     print("\n[SYSTEM] 워크플로우 종료.")
-
-    # 💡 [하위 호환성 추가] 옛날에 작성된 create_graph() 호출 코드가 터지지 않도록 컴파일된 app 객체를 반환합니다.
-def create_graph():
-    return app
