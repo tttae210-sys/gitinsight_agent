@@ -76,8 +76,14 @@ workflow.add_edge("feedback_gen", END)
 # 4. 그래프 컴파일
 app = workflow.compile()
 
+# ==========================================
+# [수정됨] API에서 그래프를 불러오기 위한 함수 추가
+# ==========================================
+def create_graph():
+    return app
+
 if __name__ == "__main__":
-    # [수정됨] 프로젝트 이름을 GitInsight로 변경
+    # 프로젝트 이름을 GitInsight로 변경
     print("\n[SYSTEM] 'GitInsight' 멀티 에이전트 워크플로우 시스템을 시작합니다...")
     
     # 테스트용 초기 상태 (URL이 없는 일반 인사말을 던져봅니다)
