@@ -1,115 +1,69 @@
-import json
-from fastapi import APIRouter
-from fastapi.responses import StreamingResponse
-from app.schemas import ChatRequest, ChatResponse, ChatResponseData, StreamEvent, InterviewState
+from fastapi import APIRouter, HTTPException
+from app.schemas import ChatRequest, ChatResponse, ChatResponseData, HighlightMetadata
 from app.graph import create_graph
+import logging
 
 router = APIRouter()
 graph = create_graph()
 
-def build_initial_state(request: ChatRequest) -> InterviewState:
-    """API 요청을 LangGraph 공통 상태로 변환한다."""
-    user_input = request.message or request.query
-    history = list(request.answer_history or [])
-    if not history or history[-1] != user_input:
-        history.append(user_input)
-
-    return InterviewState(
-        user_id=request.user_id,
-        repo_url=request.repo_url or "",
-        repo_commit_hash="",
-        tech_stack=[],
-        extracted_chunks=[],
-        current_question=request.current_question,
-        answer_history=history,
-        loop_count=request.current_retry_count,
-        evaluation=None,
-        final_report=None,
-        next_step="ANSWER" if request.current_question else "START",
-    )
-
 @router.post("/chat/sync", response_model=ChatResponse)
 async def chat_sync(request: ChatRequest):
-    """동기 방식으로 전체 응답을 한 번에 반환한다."""
-    state = build_initial_state(request)
-    result = await graph.ainvoke(state)
-    eval_data = result.get("evaluation") or {}
-    final_report = result.get("final_report") or ""
-    next_question = result.get("current_question") or ""
-    status = _response_status(eval_data, final_report, next_question)
-    
-    return ChatResponse(
-        status="success",
-        data=_build_response_data(result, status)
-    )
-
-@router.post("/chat")
-async def chat_stream(request: ChatRequest):
-    """SSE 스트리밍으로 각 노드의 처리 과정 실시간 전송"""
-    state = build_initial_state(request)
-    
-    async def gen():
-        final_state = state
-        async for event in graph.astream_events(state, version="v2"):
-            kind = event.get("event", "")
-            if kind == "on_chain_end" and event.get("name") in (
-                "intent_classifier",
-                "code_build",
-                "interview_extract",
-                "evaluation",
-                "feedback_gen",
-            ):
-                node_name = event["name"]
-                node_output = event.get("data", {}).get("output", {})
-                if isinstance(node_output, dict):
-                    final_state = {**final_state, **node_output}
-
-                sse = StreamEvent(
-                    event="node", 
-                    node=node_name, 
-                    data=json.dumps(node_output, ensure_ascii=False, default=str)
-                )
-                yield f"data: {sse.model_dump_json()}\n\n"
-
-        if final_state:
-            done_data = _build_response_data(final_state).model_dump()
-            done = StreamEvent(
-                event="done",
-                data=json.dumps(done_data, ensure_ascii=False),
+    try:
+        # 1. LangGraph 스레드 설정
+        config = {"configurable": {"thread_id": request.user_id}}
+        
+        # 2. 기존 에이전트의 내부 대화 상태 조회
+        current_state = await graph.aget_state(config)
+        existing_history = current_state.values.get("answer_history", []) if current_state.values else []
+        
+        # 3. 유저의 새 입력을 대화 기록에 누적
+        new_history = list(existing_history)
+        new_history.append(request.user_answer)
+        
+        # 4. 프론트엔드가 전송한 repo_url을 LangGraph 입력 딕셔너리에 매핑하여 강제 주입
+        inputs = {
+            "user_id": request.user_id,
+            "repo_url": request.repo_url,  
+            "answer_history": new_history,
+            "retry_count": request.current_retry_count
+        }
+        
+        # 5. 에이전트 워크플로우 동기식 실행
+        final_state = await graph.ainvoke(inputs, config=config)
+        
+        # 6. 최종 노드 도달 상태 데이터 파싱
+        next_question = final_state.get("current_question", "")
+        evaluation = final_state.get("evaluation", {})
+        
+        feedback = evaluation.get("reason", "답변이 성공적으로 기록되었습니다.") if evaluation else "대화를 이어나갑니다."
+        status = final_state.get("next_step", "PASS")
+        new_retry_count = final_state.get("retry_count", request.current_retry_count)
+        
+        # 라인 하이라이트 데이터 파싱
+        highlight_dict = final_state.get("current_highlight", None)
+        highlight_meta = None
+        if highlight_dict:
+            highlight_meta = HighlightMetadata(
+                file_path=highlight_dict.get("file_path"),
+                start_line=highlight_dict.get("start_line"),
+                end_line=highlight_dict.get("end_line")
             )
-            yield f"data: {done.model_dump_json()}\n\n"
-
-    return StreamingResponse(gen(), media_type="text/event-stream")
-
-
-def _response_status(eval_data: dict, final_report: str, next_question: str) -> str:
-    if final_report:
-        return "REPORT"
-    if eval_data.get("status") == "PASS":
-        return "PASS"
-    if eval_data.get("status") == "FAIL":
-        return "HINT"
-    if next_question:
-        return "QUESTION"
-    return "CHAT"
-
-
-def _build_response_data(result: dict, status: str | None = None) -> ChatResponseData:
-    eval_data = result.get("evaluation") or {}
-    final_report = result.get("final_report") or ""
-    next_question = result.get("current_question") or ""
-    resolved_status = status or _response_status(eval_data, final_report, next_question)
-    answer = final_report or next_question or eval_data.get("hint") or eval_data.get("reason") or ""
-
-    return ChatResponseData(
-        evaluation_score=int(eval_data.get("score", 0) or 0),
-        feedback=eval_data.get("reason", ""),
-        is_finished=bool(final_report or eval_data.get("status") == "PASS"),
-        next_question=next_question,
-        answer=answer,
-        status=resolved_status,
-        new_retry_count=int(result.get("loop_count", 0) or 0),
-        tech_stack=result.get("tech_stack", []) or [],
-        extracted_chunks=result.get("extracted_chunks", []) or [],
-        final_report=final_report,
-    )
+        
+        # 7. 대시보드 세션 데이터를 빠짐없이 최종 데이터 셋에 팩킹
+        response_data = ChatResponseData(
+            feedback=feedback,
+            next_question=next_question,
+            new_retry_count=new_retry_count,
+            status=status,
+            highlight=highlight_meta,
+            tech_stack=final_state.get("tech_stack", []),
+            extracted_chunks=final_state.get("extracted_chunks", []),
+            evaluation=evaluation,
+            final_report=final_state.get("final_report", "")
+        )
+        
+        return ChatResponse(status="success", data=response_data)
+        
+    except Exception as e:
+        logging.error(f"Error in chat_sync: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
