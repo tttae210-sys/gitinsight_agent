@@ -1,6 +1,6 @@
 import requests
 import re
-from app.state import InterviewState
+from app.schemas import InterviewState
 
 def build_github_repo(state: InterviewState) -> dict:
     """GitHub API를 사용해 레포지토리의 소스코드를 수집하고 기술 스택을 분석합니다."""
