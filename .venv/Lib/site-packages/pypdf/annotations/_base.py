@@ -19,7 +19,7 @@ class AnnotationDictionary(DictionaryObject, ABC):
 
     @property
     def flags(self) -> AnnotationFlag:
-        return AnnotationFlag(self.get(NameObject("/F"), 0))
+        return self.get(NameObject("/F"), AnnotationFlag(0))
 
     @flags.setter
     def flags(self, value: AnnotationFlag) -> None:

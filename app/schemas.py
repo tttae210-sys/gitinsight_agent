@@ -21,3 +21,19 @@ class InterviewState(TypedDict):
     # 4. 평가 및 최종 결과
     evaluation: Optional[Dict]   # 답변 평가 결과 (충족 여부 및 근거)
     final_report: Optional[str]  # 최종 리팩토링 리포트 텍스트
+    
+    user_answer: str = ""  # 🔴 추가
+    retry_count: int = 0   # 🔴 추가
+
+class ChatRequest(BaseModel):
+    user_id: str
+    user_answer: str          # 🔴 추가: 유저가 방금 입력한 답변
+    current_retry_count: int  # 🔴 추가: 프론트에서 보낸 현재 힌트 카운트 (0~3)
+
+class ChatResponseData(BaseModel):
+    evaluation_score: int
+    feedback: str
+    is_finished: bool
+    next_question: str
+    status: str = "HINT"     # 🔴 추가: "PASS" | "HINT" | "FAIL" 상태를 내려줌
+    new_retry_count: int = 0 # 🔴 추가: 새로 업데이트된 힌트 카운트를 내려줌

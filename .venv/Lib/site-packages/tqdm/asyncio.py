@@ -1,5 +1,5 @@
 """
-Asynchronous progress bar decorator for iterators.
+Asynchronous progressbar decorator for iterators.
 Includes a default `range` iterator printing to `stderr`.
 
 Usage:

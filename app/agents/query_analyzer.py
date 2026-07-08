@@ -62,3 +62,6 @@ async def analyze_node(state: InterviewState) -> dict:
         update_data["messages"] = [AIMessage(content=analysis.reply_message)]
         
     return update_data
+
+# 💡 [하위 호환성 추가] 옛날에 작성된 노드 호출 코드가 터지지 않도록 새 함수와 매핑합니다.
+intent_classifier_node = analyze_node

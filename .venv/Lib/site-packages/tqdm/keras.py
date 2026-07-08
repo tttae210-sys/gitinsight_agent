@@ -23,8 +23,7 @@ class TqdmCallback(keras.callbacks.Callback):
             if logs:
                 if pop:
                     logs = copy(logs)
-                    for i in pop:
-                        logs.pop(i, 0)
+                    [logs.pop(i, 0) for i in pop]
                 bar.set_postfix(logs, refresh=False)
             bar.update(n)
 

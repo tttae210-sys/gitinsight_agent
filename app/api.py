@@ -16,6 +16,8 @@ def build_initial_state(request: ChatRequest) -> InterviewState:
         repo_url="",  # 필요시 request 파싱하여 추가
         repo_commit_hash="",
         current_question="",
+        user_answer=request.user_answer,       # 🔴 추가: 유저 답변을 AI 상태에 주입
+        retry_count=request.current_retry_count # 🔴 추가: 현재 힌트 카운트를 AI 상태에 주입
     )
 
 @router.post("/chat/sync", response_model=ChatResponse)
@@ -33,7 +35,9 @@ async def chat_sync(request: ChatRequest):
             evaluation_score=eval_data.get("score", 0),
             feedback=eval_data.get("reason", "평가 중입니다."),
             is_finished=eval_data.get("is_satisfied", False),
-            next_question=result.get("current_question", "")
+            next_question=result.get("current_question", ""),
+            status=eval_data.get("status", "HINT"), 
+            new_retry_count=result.get("retry_count", 0)
         )
     )
 
@@ -68,7 +72,10 @@ async def chat_stream(request: ChatRequest):
                 "evaluation_score": final_state.get("evaluation", {}).get("score", 0),
                 "feedback": final_state.get("evaluation", {}).get("reason", ""),
                 "is_finished": final_state.get("evaluation", {}).get("is_satisfied", False),
-                "next_question": final_state.get("current_question", "")
+                "next_question": final_state.get("current_question", ""),
+                # 스트리밍 완료 시점에도 프론트에 힌트 상태 전달
+                "status": eval_data.get("status", "HINT"),
+                "new_retry_count": final_state.get("retry_count", 0)
             }
             done = StreamEvent(
                 event="done",
