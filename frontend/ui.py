@@ -80,14 +80,27 @@ if "current_question" not in st.session_state:
     st.session_state.current_question = ""
 if "answer_history" not in st.session_state:
     st.session_state.answer_history = []
+if "repo_url" not in st.session_state:
+    st.session_state.repo_url = ""
 
 # ==========================================
 # 2. 사이드바 UI (3-Strike 시각화)
 # ==========================================
 with st.sidebar:
     st.header("⚙️ 프로젝트 설정")
-    repo_url = st.text_input("GitHub Repository URL", placeholder="https://github.com/username/repository")
-    
+    # 깃허브 URL 입력창 (세션 상태로 값을 영구 보존 — 채팅 submit 시 값 유지)
+    repo_url_input = st.text_input(
+        "GitHub Repository URL",
+        value=st.session_state.repo_url,
+        placeholder="https://github.com/username/repository",
+        help="에이전트가 코드를 파싱하고 모의 면접 족보를 추출할 대상 주소입니다."
+    )
+    if repo_url_input != st.session_state.repo_url:
+        st.session_state.repo_url = repo_url_input
+        st.rerun()
+
+    repo_url = st.session_state.repo_url
+
     if repo_url:
         st.success(f"🔗 연결 성공: {repo_url.split('/')[-1]}")
     else:
@@ -120,6 +133,7 @@ with st.sidebar:
         st.session_state.retry_count = 0
         st.session_state.current_highlight = None
         st.session_state.answer_history = []
+        # repo_url은 초기화하지 않음 (다시 입력하는 불편함 방지)
         st.rerun()
 
 # ==========================================
@@ -199,7 +213,9 @@ with col_dashboard:
 # 4. 사용자 채팅 및 백엔드 연동
 # ==========================================
 if prompt := st.chat_input("질문을 입력하세요. (예: 내 코드에서 발생 가능한 에러 분석해줘)"):
-    
+    # 세션 상태에서 repo_url 읽기 (사이드바 입력값이 항상 보존됨)
+    repo_url = st.session_state.repo_url
+
     st.session_state.messages.append({"role": "user", "content": prompt})
     with col_chat:
         with st.chat_message("user"):
