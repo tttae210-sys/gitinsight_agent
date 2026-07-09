@@ -5,24 +5,29 @@ from app.core.llm import get_llm
 
 def classify_user_intent(state: InterviewState) -> dict:
     """유저의 입력을 분석하여 START(시작/링크), ANSWER(면접답변), CHAT(일반대화)으로 분류합니다."""
-    if state.get("next_step") == "ANSWER":
-        return {"next_step": "ANSWER"}
 
-    llm = get_llm(temperature=0.0)
-    
-    # 최근 유저 입력 가져오기
-    user_input = state["answer_history"][-1] if state.get("answer_history") else ""
-    user_input = user_input.strip()
-    
-    # 1. 정규표현식으로 깃허브 레포지토리 링크가 포함되어 있는지 최우선 검사
+    user_input = state.get("answer_history", [""])[-1].strip() if state.get("answer_history") else ""
+    repo_url = state.get("repo_url", "")
+
+    # 1. 채팅 입력에 깃허브 URL이 직접 포함된 경우 최우선 처리
     github_pattern = r"github\.com/[\w\-]+/[\w\-]+"
     if re.search(github_pattern, user_input):
-        # 입력에서 URL만 추출해서 저장하기 위해 함께 반환
         urls = re.findall(r'(https?://github\.com/[\w\-]+/[\w\-]+)', user_input)
-        repo_url = urls[0] if urls else user_input
+        extracted_url = urls[0] if urls else user_input
+        return {"next_step": "START", "repo_url": extracted_url}
+
+    # 2. 사이드바에서 repo_url이 주입되었고 아직 코드 빌드가 안 된 경우 → START
+    #    (extracted_chunks가 비어 있으면 아직 분석 전이라는 의미)
+    if repo_url and not state.get("extracted_chunks"):
         return {"next_step": "START", "repo_url": repo_url}
-    
-    # 2. 링크가 없다면 LLM을 통해 면접 답변인지 일반 대화인지 분류
+
+    # 3. 이미 면접 진행 중(질문이 존재)이고 next_step이 ANSWER로 지정된 경우
+    if state.get("next_step") == "ANSWER" and state.get("current_question"):
+        return {"next_step": "ANSWER"}
+
+    # 4. LLM으로 면접 답변인지 일반 대화인지 분류
+    llm = get_llm(temperature=0.0)
+
     prompt = ChatPromptTemplate.from_messages([
         ("system", (
             "당신은 기술 면접 시스템의 정교한 라우터입니다. 유저의 입력이 앞선 면접 질문에 대한 '답변'이거나 "
@@ -32,12 +37,11 @@ def classify_user_intent(state: InterviewState) -> dict:
         )),
         ("human", "유저 입력: {user_input}")
     ])
-    
+
     chain = prompt | llm
     response = chain.invoke({"user_input": user_input})
     intent = response.content.strip().upper()
-    
-    # 방어 코드: 엉뚱한 문자열이 올 경우를 대비
+
     if "ANSWER" in intent:
         return {"next_step": "ANSWER"}
     else:
