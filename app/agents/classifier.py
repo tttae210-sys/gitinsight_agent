@@ -20,9 +20,43 @@ def classify_user_intent(state: InterviewState) -> dict:
     if repo_url and not state.get("extracted_chunks"):
         return {"next_step": "START", "repo_url": repo_url}
 
-    # 3. 면접이 진행 중이면 (current_question이 존재하면) 무조건 ANSWER로 처리
-    #    "모르겠어", "힌트 줘" 같은 포기 발언도 포함 — evaluator가 판단해서 HINT/FAIL 처리
+    # 3. 면접이 진행 중이면 (current_question이 존재하면) 답변 처리
     if state.get("current_question") and state.get("extracted_chunks"):
+        # 힌트 없이 다음 질문만 요청하는 시스템 지시 감지
+        skip_keywords = [
+            "힌트 보여주지마", "힌트 보여주지 마", "힌트 없이", "힌트 말고",
+            "힌트 빼고", "힌트 그만", "질문만 해", "질문만 해줘", "다음 질문",
+            "그냥 넘어가", "넘어가줘", "skip", "다음으로", "그냥 질문해줘",
+            "힌트 필요없어", "힌트 필요 없어", "no hint"
+        ]
+        lower_input = user_input.lower()
+        if any(kw in lower_input for kw in skip_keywords):
+            return {"next_step": "SKIP"}
+
+        # 정답 요청 여부를 LLM으로 판단
+        llm_for_intent = get_llm(temperature=0.0)
+        intent_prompt = ChatPromptTemplate.from_messages([
+            ("system", (
+                "당신은 사용자의 입력이 '정답 또는 모범 답안을 직접 알려달라는 요청'인지 판단하는 분류기입니다.\n"
+                "다음 중 하나만 출력하세요: YES 또는 NO\n\n"
+                "[YES로 분류하는 경우]\n"
+                "- 정답, 답, 모범 답안, 해설을 알려달라는 요청\n"
+                "- '모르겠으니 답 알려줘', '답이 뭔지 알려줘', '정답 공개해줘' 등\n"
+                "- 힌트가 아닌 완전한 답변을 원하는 경우\n\n"
+                "[NO로 분류하는 경우]\n"
+                "- 기술적 답변 시도\n"
+                "- 힌트 요청\n"
+                "- 모르겠다는 표현 (단순 포기)\n"
+                "- 일반 대화\n\n"
+                "오직 YES 또는 NO만 출력하세요."
+            )),
+            ("human", "사용자 입력: {user_input}")
+        ])
+        intent_chain = intent_prompt | llm_for_intent
+        intent_response = intent_chain.invoke({"user_input": user_input})
+        if "YES" in intent_response.content.strip().upper():
+            return {"next_step": "ANSWER_REQUEST"}
+
         return {"next_step": "ANSWER"}
 
     # 4. LLM으로 면접 답변인지 일반 대화인지 분류 (면접 시작 전 단계)

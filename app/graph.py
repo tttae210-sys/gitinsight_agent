@@ -7,7 +7,7 @@ from app.schemas import InterviewState
 from app.agents.builder import build_github_repo
 from app.agents.classifier import classify_user_intent
 from app.agents.extractor import extract_interview_question
-from app.agents.feedback import evaluate_answer, generate_final_report
+from app.agents.feedback import evaluate_answer, generate_final_report, provide_answer
 
 
 # ==========================================
@@ -26,7 +26,7 @@ def chat_node(state: InterviewState) -> dict:
 # 라우터 함수
 # ==========================================
 def route_after_classifier(state: InterviewState) -> str:
-    """인텐트 분류 결과에 따라 빌더(START), 채점기(ANSWER), 캐주얼챗(CHAT) 경로를 나눕니다."""
+    """인텐트 분류 결과에 따라 빌더(START), 채점기(ANSWER), 질문 스킵(SKIP), 캐주얼챗(CHAT) 경로를 나눕니다."""
     return state.get("next_step", "CHAT")
 
 
@@ -34,10 +34,13 @@ def route_after_evaluation(state: InterviewState) -> str:
     """
     [핵심 분기 제어]
     - PASS 또는 HINT: 다음 면접 질문 추출 노드로 이동
+    - ANSWER_GIVEN: 정답을 직접 알려준 경우 → END로 바로 종료
     - FAIL (3-Strike 아웃): 최종 리포트 작성 노드(reporter)로 강제 트랙 전환
     """
     next_step = state.get("next_step", "HINT")
-    if next_step in ("PASS", "HINT"):
+    if next_step == "ANSWER_GIVEN":
+        return "end"
+    elif next_step in ("PASS", "HINT"):
         return "extractor"
     else:
         return "reporter"
@@ -55,6 +58,7 @@ def create_graph():
     workflow.add_node("builder", build_github_repo)
     workflow.add_node("extractor", extract_interview_question)
     workflow.add_node("evaluator", evaluate_answer)
+    workflow.add_node("answer_provider", provide_answer)
     workflow.add_node("chat", chat_node)
     workflow.add_node("reporter", generate_final_report)
 
@@ -68,11 +72,14 @@ def create_graph():
         {
             "START": "builder",
             "ANSWER": "evaluator",
+            "ANSWER_REQUEST": "answer_provider",
+            "SKIP": "extractor",
             "CHAT": "chat"
         }
     )
     workflow.add_edge("builder", "extractor")
     workflow.add_edge("chat", END)
+    workflow.add_edge("answer_provider", END)
 
     # 채점 후 분기: extractor(다음 질문) 또는 reporter(최종 리포트)
     workflow.add_conditional_edges(
@@ -80,7 +87,8 @@ def create_graph():
         route_after_evaluation,
         {
             "extractor": "extractor",
-            "reporter": "reporter"
+            "reporter": "reporter",
+            "end": END
         }
     )
     workflow.add_edge("extractor", END)

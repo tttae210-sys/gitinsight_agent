@@ -49,8 +49,9 @@ async def chat_sync(request: ChatRequest):
         new_retry_count = final_state.get("retry_count", request.current_retry_count)
 
         # 상태별 feedback 결정
-        # HINT: evaluator 오답 이유를 feedback으로, extractor 힌트를 next_question으로
-        if status == "HINT" and evaluation:
+        if status == "ANSWER_GIVEN" and evaluation:
+            feedback = evaluation.get("reason", "")
+        elif status == "HINT" and evaluation:
             feedback = evaluation.get("reason", "답변이 부족합니다. 힌트를 참고해 다시 시도해 보세요.")
         elif status in ("PASS", "FAIL") and evaluation:
             feedback = evaluation.get("reason", "")

@@ -276,7 +276,10 @@ with col_dashboard:
             is_passed = st.session_state.evaluation.get("passed", False)
             metric_col1, metric_col2 = st.columns(2)
             metric_col1.metric("종합 점수", f"{score}점")
-            metric_col2.metric("패스 여부", "PASS" if is_passed else "RE-TRY")
+            if is_passed:
+                metric_col2.metric("면접 결과", "✅ 합격")
+            else:
+                metric_col2.metric("면접 결과", "❌ 불합격")
             st.markdown(f"**상세 채점 기준:**\n{st.session_state.evaluation.get('reason', '')}")
         else:
             st.info("유저가 면접 질문에 답변을 완료하면 AI의 정밀 평가 결과가 실시간 기록됩니다.")
@@ -343,7 +346,13 @@ if prompt := st.chat_input("질문 혹은 답변을 입력하세요."):
                     status_val = result_data.get("status", "")
 
                     # 상태별 채팅 메시지 구성
-                    if status_val == "HINT":
+                    if status_val == "PASS":
+                        score = result_data.get("evaluation", {}).get("score", "")
+                        score_text = f" ({score}점)" if score else ""
+                        ai_message = f"✅ **면접 합격{score_text}**\n\n{feedback}"
+                    elif status_val == "FAIL":
+                        ai_message = f"{feedback}\n\n면접이 종료되었습니다. 우측 리포트 탭에서 상세 피드백을 확인하세요."
+                    elif status_val == "HINT":
                         # 힌트: evaluator 오답 이유 + extractor 힌트
                         if feedback and next_q:
                             ai_message = f"🔴 **오답 처리**\n\n{feedback}\n\n---\n\n{next_q}"

@@ -37,17 +37,68 @@ def evaluate_answer(state: InterviewState) -> dict:
     chunks = state.get("extracted_chunks", [])
 
     # 🔴 [버그 수정] '어렵다', '도와줘' 같은 약한 신호 단어는 짧은 답변(15자 미만)일 때만 포기로 간주
-    strong_giveup_phrases = ["모르겠", "모릅니다", "몰라요", "패스", "pass", "답이 뭐", "정답이 뭐"]
+    strong_giveup_phrases = ["모르겠", "모릅니다", "몰라요", "패스", "pass"]
     hint_request_phrases = ["힌트 주세요", "힌트를 줘", "힌트 줘", "힌트좀", "힌트 좀", "알려줘요"]
+    answer_request_phrases = ["정답이 뭐", "답이 뭐", "답을 알려", "정답 알려", "정답을 알려", "답 알려줘", "정답 줘", "정답을 줘", "답 줘", "모범 답안", "답 알려", "정답 알려줘", "답알려줘", "정답알려줘"]
     weak_signal_words = ["어렵다", "어려워", "어려운", "도와줘"]
 
     has_strong_giveup = any(kw in user_answer for kw in strong_giveup_phrases)
     has_hint_request = any(kw in user_answer for kw in hint_request_phrases)
+    has_answer_request = any(kw in user_answer for kw in answer_request_phrases)
     has_weak_signal_only = (
         any(kw in user_answer for kw in weak_signal_words) and len(user_answer) < 15
     )
     is_too_short = len(user_answer) < 5
     is_surrender = has_strong_giveup or has_hint_request or has_weak_signal_only or is_too_short
+
+    # 정답 요청 시 → LLM이 정답을 직접 알려줌
+    if has_answer_request:
+        llm = get_llm(temperature=0.3)
+
+        code_context = ""
+        for chunk in chunks:
+            code_context += f"--- File: {chunk.get('file_path')} ---\n{chunk.get('content', chunk.get('code', ''))}\n\n"
+        if not code_context:
+            code_context = "분석 대상 주요 소스코드가 없습니다."
+
+        answer_prompt = ChatPromptTemplate.from_messages([
+            ("system", (
+                "당신은 IT 대기업 출신의 친절한 시니어 개발자 멘토입니다.\n"
+                "지원자가 면접 질문의 정답을 직접 요청했습니다. 이제 힌트가 아닌 명확하고 완전한 모범 답안을 알려주세요.\n\n"
+                "[프로젝트 소스코드 맥락]\n{code_context}\n\n"
+                "[작성 지침]\n"
+                "1. 질문에 대한 핵심 개념과 원리를 정확하게 설명하세요.\n"
+                "2. 지원자의 소스코드를 기반으로 구체적인 예시를 들어 설명하세요.\n"
+                "3. 코드 예시가 필요하다면 코드 블록을 사용해도 됩니다.\n"
+                "4. 마지막에 이 개념을 공부할 수 있는 핵심 키워드를 1~2개 짧게 제안해 주세요.\n"
+                "5. 친절하고 격려하는 선배의 어조로 작성하세요."
+            )),
+            ("human", (
+                "[면접 질문]\n{current_question}\n\n"
+                "위 질문에 대한 완전한 모범 답안을 알려주세요."
+            ))
+        ])
+
+        chain = answer_prompt | llm
+        try:
+            response = chain.invoke({
+                "code_context": code_context,
+                "current_question": current_question,
+            })
+            answer_reason = response.content.strip()
+        except Exception as e:
+            answer_reason = f"모범 답안 생성 중 오류가 발생했습니다. (오류: {str(e)})"
+
+        evaluation_result = {
+            "score": 0,
+            "passed": False,
+            "reason": f"📖 **모범 답안**\n\n{answer_reason}"
+        }
+        return {
+            "evaluation": evaluation_result,
+            "next_step": "ANSWER_GIVEN",
+            "retry_count": min(retry_count + 1, 3)
+        }
 
     if is_surrender:
         evaluation_result = {
@@ -142,7 +193,11 @@ def evaluate_answer(state: InterviewState) -> dict:
         new_retry_count = 0
     else:
         new_retry_count = retry_count + 1
-        next_step = "HINT" if new_retry_count < 3 else "FAIL"
+        if new_retry_count < 3:
+            next_step = "HINT"
+        else:
+            next_step = "FAIL"
+            evaluation_result["reason"] = "❌ **면접 불합격**\n\n" + evaluation_result.get("reason", "")
 
     return {
         "evaluation": evaluation_result,
@@ -151,9 +206,64 @@ def evaluate_answer(state: InterviewState) -> dict:
     }
 
 
-# ==========================================
-# 2. 기존 피드백 리포트 생성 함수 (하위 호환)
-# ==========================================
+def provide_answer(state: InterviewState) -> dict:
+    """
+    지원자가 정답을 직접 요청했을 때 모범 답안을 생성합니다.
+    힌트가 아닌 완전한 해설을 제공합니다.
+    """
+    llm = get_llm(temperature=0.3)
+    current_question = state.get("current_question", "")
+    chunks = state.get("extracted_chunks", [])
+    retry_count = state.get("retry_count", 0)
+
+    code_context = ""
+    for chunk in chunks:
+        code_context += f"--- File: {chunk.get('file_path')} ---\n{chunk.get('content', chunk.get('code', ''))}\n\n"
+    if not code_context:
+        code_context = "분석 대상 주요 소스코드가 없습니다."
+
+    answer_prompt = ChatPromptTemplate.from_messages([
+        ("system", (
+            "당신은 IT 대기업 출신의 시니어 개발자 멘토입니다.\n"
+            "지원자가 면접 질문의 정답을 직접 요청했습니다. 불필요한 인사말, 칭찬, 감탄사 없이 바로 모범 답안을 제공하세요.\n\n"
+            "[프로젝트 소스코드 맥락]\n{code_context}\n\n"
+            "[작성 지침]\n"
+            "1. '안녕하세요', '멋진 질문이에요', '좋은 질문입니다' 같은 인사나 감탄사로 시작하지 마세요.\n"
+            "2. 바로 핵심 개념과 원리 설명으로 시작하세요.\n"
+            "3. 지원자의 소스코드를 기반으로 구체적인 예시를 들어 설명하세요.\n"
+            "4. 코드 예시가 필요하다면 코드 블록을 사용해도 됩니다.\n"
+            "5. 마지막에 이 개념을 공부할 수 있는 핵심 키워드를 1~2개 짧게 제안하세요.\n"
+            "6. 전체 내용은 간결하고 핵심만 담아서 작성하세요."
+        )),
+        ("human", (
+            "[면접 질문]\n{current_question}\n\n"
+            "위 질문에 대한 완전한 모범 답안을 알려주세요."
+        ))
+    ])
+
+    chain = answer_prompt | llm
+    try:
+        response = chain.invoke({
+            "code_context": code_context,
+            "current_question": current_question,
+        })
+        answer_text = response.content.strip()
+    except Exception as e:
+        answer_text = f"모범 답안 생성 중 오류가 발생했습니다. (오류: {str(e)})"
+
+    evaluation_result = {
+        "score": 0,
+        "passed": False,
+        "reason": f"📖 **모범 답안**\n\n{answer_text}"
+    }
+
+    return {
+        "evaluation": evaluation_result,
+        "next_step": "ANSWER_GIVEN",
+        "retry_count": min(retry_count + 1, 3)
+    }
+
+
 def generate_feedback_report(state: InterviewState) -> dict:
     """전체 면접 질문과 답변 히스토리를 종합하여 리포트를 생성합니다."""
     llm = get_llm(temperature=0.2)
