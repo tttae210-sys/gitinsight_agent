@@ -3,6 +3,8 @@ from pydantic import BaseModel, Field
 from app.schemas import InterviewState
 from langchain_core.prompts import ChatPromptTemplate
 from app.core.llm import get_llm
+from app.service.vector_service import get_vector_service
+
 
 class ExtractedQuestionSchema(BaseModel):
     question: str = Field(description="지원자에게 던질 구체적인 꼬리 질문")
@@ -10,29 +12,58 @@ class ExtractedQuestionSchema(BaseModel):
     start_line: Optional[int] = Field(None, description="지적한 코드 영역의 시작 줄 번호 (1부터 시작)")
     end_line: Optional[int] = Field(None, description="지적한 코드 영역의 끝 줄 번호 (1부터 시작)")
 
+
 def extract_interview_question(state: InterviewState) -> dict:
     """수집된 소스코드 문맥에 라인 번호를 명시하고, LLM을 통해 질문과 하이라이트 메타데이터를 함께 추출합니다."""
     llm = get_llm(temperature=0.4)
     structured_llm = llm.with_structured_output(ExtractedQuestionSchema)
-    
+
     tech_stack = ", ".join(state.get("tech_stack", []))
     loop_count = state.get("loop_count", 0)
     chunks = state.get("extracted_chunks", [])
-    
+    repo_url = state.get("repo_url", "")
+    answer_history = state.get("answer_history", [])
+
+    # ── RAG 검색: tech_stack + 최근 답변 조합 쿼리로 관련 코드 추가 검색 ──────
+    recent_answer = answer_history[-1] if answer_history else ""
+    rag_query = f"{tech_stack} {recent_answer}".strip() or "코드 구조 및 설계"
+
+    try:
+        rag_chunks = get_vector_service().search(
+            query=rag_query,
+            filters={"repo_url": repo_url} if repo_url else None,
+            n_results=3,
+        )
+    except Exception:
+        rag_chunks = []
+    print(f"[extractor] RAG 검색: {len(rag_chunks)}개 청크 | query: '{rag_query[:50]}'")
+    # ──────────────────────────────────────────────────────────────────────────
+
+    # ── 코드 컨텍스트 구성: state 청크 + RAG 검색 결과 (줄번호 포함) ───────────
     code_context = ""
+
+    # (A) builder 가 state 에 남긴 원본 청크 (content/code 키 모두 지원)
     for chunk in chunks:
-        file_path = chunk.get('file_path')
+        file_path = chunk.get("file_path", "unknown")
+        code_text = chunk.get("content") or chunk.get("code", "")
         code_context += f"--- File: {file_path} ---\n"
-        
-        lines = chunk.get('content', '').split('\n')
-        for idx, line in enumerate(lines, 1):
+        for idx, line in enumerate(code_text.split("\n"), 1):
             code_context += f"{idx}: {line}\n"
         code_context += "\n"
-        
-    if not code_context:
-        code_context = "제출된 소스코드에 분석 가능한 주요 코드 파일이 존재하지 않습니다."
 
-    # 🔴 [버그 수정 1] f-string 대신 LangChain의 고유 변수 {code_context}로 뚫어놓습니다.
+    # (B) ChromaDB 의미 검색으로 가져온 유사 청크
+    for i, rc in enumerate(rag_chunks, start=1):
+        file_path = rc.get("file_path", "unknown")
+        code_text = rc.get("content", "")
+        code_context += f"--- [RAG #{i}] File: {file_path} ---\n"
+        for idx, line in enumerate(code_text.split("\n"), 1):
+            code_context += f"{idx}: {line}\n"
+        code_context += "\n"
+
+    if not code_context.strip():
+        code_context = "제출된 소스코드에 분석 가능한 주요 코드 파일이 존재하지 않습니다."
+    # ──────────────────────────────────────────────────────────────────────────
+
     system_msg = (
         "당신은 강원대학교 컴퓨터공학과 학생들을 위해 기술 면접을 진행하는 IT 대기업의 시니어 면접관입니다.\n"
         f"지원자의 기술 스택({tech_stack})과 소스코드 문맥을 철저히 분석하여 전공자 수준의 날카로운 꼬리 질문을 던지세요.\n\n"
@@ -44,27 +75,24 @@ def extract_interview_question(state: InterviewState) -> dict:
         "3. 만약 특정 소스코드를 지목할 필요가 없는 일반 CS 꼬리 질문인 경우, file_path, start_line, end_line은 null(None)로 반환하세요.\n"
         "4. 한 번에 딱 한 가지 질문만 명확히 던지세요."
     )
-    
-    answer_history = state.get("answer_history", [])
+
     history_conversation = ""
     for idx, chat in enumerate(answer_history):
         role = "지원자" if idx % 2 != 0 else "면접관"
         history_conversation += f"- {role}: {chat}\n"
-    
-    # 🔴 [버그 수정 2] human 프롬프트 역시 f-string을 제거하고 {history_conversation} 변수로 받습니다.
+
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_msg),
         ("human", "이전 면접 대화 기록:\n{history_conversation}\n\n위 문맥을 이어받아 다음 면접 질문과 하이라이트 영역을 구성해 주세요.")
     ])
-    
+
     chain = prompt | structured_llm
-    
-    # 🔴 [버그 수정 3] 텅 빈 딕셔너리({}) 대신, 방금 뚫어놓은 변수들의 실제 텍스트 데이터를 안전하게 주입(invoke)합니다.
+
     response = chain.invoke({
         "code_context": code_context,
         "history_conversation": history_conversation
     })
-    
+
     highlight_data = {
         "file_path": response.file_path,
         "start_line": response.start_line,
@@ -73,6 +101,6 @@ def extract_interview_question(state: InterviewState) -> dict:
 
     return {
         "current_question": response.question,
-        "current_highlight": highlight_data, 
+        "current_highlight": highlight_data,
         "loop_count": loop_count + 1
     }
