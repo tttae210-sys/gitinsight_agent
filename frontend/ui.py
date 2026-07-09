@@ -273,7 +273,7 @@ if prompt := st.chat_input("질문 혹은 답변을 입력하세요."):
             status_placeholder.info("⚡ GitInsight 에이전트가 코드를 탐색하고 답변을 평가하는 중입니다...\n(최초 파일 임베딩 및 빌드 시에는 약 1~2분이 소요될 수 있으니 잠시만 기다려 주세요.)")
 
             try:
-                response = requests.post(backend_url, json=payload, timeout=120)
+                response = requests.post(backend_url, json=payload, timeout=300)
 
                 if response.status_code == 200:
                     status_placeholder.empty()
@@ -319,7 +319,7 @@ if prompt := st.chat_input("질문 혹은 답변을 입력하세요."):
 
             except requests.exceptions.Timeout:
                 status_placeholder.empty()
-                error_msg = "⚠️ **요청 대기 시간 초과(Timeout)**\n\n지정한 대기 시간(120초) 내에 에이전트로부터 응답을 받지 못했습니다. 잠시 후 다시 시도해 주세요."
+                error_msg = "⚠️ **요청 대기 시간 초과(Timeout)**\n\n지정한 대기 시간(5분) 내에 에이전트로부터 응답을 받지 못했습니다. 깃허브 저장소 용량이 크거나 서버의 LLM 네트워크 지연 때문일 수 있으니, 잠시 후 다시 시도해 보세요."
                 response_placeholder.error(error_msg)
                 st.session_state.messages.append({"role": "assistant", "content": error_msg})
 

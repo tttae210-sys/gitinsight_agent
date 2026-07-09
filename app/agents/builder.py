@@ -106,7 +106,7 @@ def build_github_repo(state: InterviewState) -> dict:
     commit_url = f"https://api.github.com/repos/{owner}/{repo}/commits"
     commit_hash = "latest"
     try:
-        commit_res = requests.get(commit_url, headers=headers, timeout=5)
+        commit_res = requests.get(commit_url, headers=headers, timeout=10)
         if commit_res.status_code == 200:
             commit_data = commit_res.json()
             if isinstance(commit_data, list) and len(commit_data) > 0:
@@ -161,7 +161,7 @@ def build_github_repo(state: InterviewState) -> dict:
         # 3. [Cache Miss]: 신규 다운로드 및 임베딩 분석
         logging.info(f"🛰️ [Cache Miss] 신규 코드 변경 감지. 깃허브 트리 분석 시작 (SHA: {commit_hash[:7]})")
         tree_url = f"https://api.github.com/repos/{owner}/{repo}/git/trees/{commit_hash}?recursive=1"
-        tree_res = requests.get(tree_url, headers=headers, timeout=5).json()
+        tree_res = requests.get(tree_url, headers=headers, timeout=10).json()
         files = tree_res.get("tree", [])
 
         target_extensions = ('.py', '.js', '.ts', '.java', '.go', '.cpp')
@@ -189,7 +189,7 @@ def build_github_repo(state: InterviewState) -> dict:
                 raw_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{commit_hash}/{path}"
                 raw_res = requests.get(raw_url, timeout=3)
                 if raw_res.status_code == 200:
-                    code_content = raw_res.text[:1500]
+                    code_content = raw_res.text[:800]  # 파일당 800자로 제한 (임베딩 속도 향상)
 
                     extracted_chunks.append({
                         "file_path": path,
