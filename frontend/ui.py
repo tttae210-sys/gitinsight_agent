@@ -282,7 +282,23 @@ if prompt := st.chat_input("질문 혹은 답변을 입력하세요."):
 
                     feedback = result_data.get("feedback", "")
                     next_q = result_data.get("next_question", "")
-                    ai_message = f"{feedback}\n\n---\n\n**다음 질문:**\n{next_q}" if next_q and result_data.get("status") != "REPORT" else feedback
+                    status_val = result_data.get("status", "")
+
+                    # 상태별 채팅 메시지 구성
+                    if status_val == "HINT":
+                        # 힌트: evaluator 피드백(오답 이유) + extractor 힌트 메시지
+                        if feedback and next_q:
+                            ai_message = f"🔴 **오답 처리**\n\n{feedback}\n\n---\n\n{next_q}"
+                        elif next_q:
+                            ai_message = next_q
+                        else:
+                            ai_message = feedback
+                    elif status_val == "REPORT":
+                        ai_message = result_data.get("final_report", feedback) or feedback
+                    elif next_q:
+                        ai_message = f"{feedback}\n\n---\n\n**[다음 질문]**\n{next_q}" if feedback else next_q
+                    else:
+                        ai_message = feedback or "응답을 처리하는 중입니다."
 
                     # 백엔드가 리턴한 상태 세션에 동기화
                     st.session_state.retry_count = result_data.get("new_retry_count", 0)

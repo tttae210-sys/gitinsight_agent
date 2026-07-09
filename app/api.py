@@ -34,10 +34,22 @@ async def chat_sync(request: ChatRequest):
         # 6. 최종 노드 도달 상태 데이터 파싱
         next_question = final_state.get("current_question", "")
         evaluation = final_state.get("evaluation", {})
-        
-        feedback = evaluation.get("reason", "답변이 성공적으로 기록되었습니다.") if evaluation else "대화를 이어나갑니다."
         status = final_state.get("next_step", "PASS")
         new_retry_count = final_state.get("retry_count", request.current_retry_count)
+
+        # HINT 상태: evaluator 피드백을 채팅 메시지로, extractor 힌트를 next_question으로
+        # CHAT/기타: current_question을 그대로 메시지로 사용
+        if status == "HINT" and evaluation:
+            feedback = evaluation.get("reason", "답변이 부족합니다. 힌트를 참고해 다시 시도해 보세요.")
+        elif status in ("PASS", "FAIL") and evaluation:
+            feedback = evaluation.get("reason", "")
+        elif status == "REPORT":
+            feedback = final_state.get("final_report", "")
+        elif not evaluation and next_question:
+            # 첫 질문 생성 직후 (evaluator 미실행) — feedback 없이 질문만 내려줌
+            feedback = ""
+        else:
+            feedback = evaluation.get("reason", "") if evaluation else ""
         
         # 라인 하이라이트 데이터 파싱
         highlight_dict = final_state.get("current_highlight", None)
