@@ -9,14 +9,14 @@ from app.core.llm import get_llm
 # 0. LLM 구조적 출력을 위한 Pydantic 스키마 정의
 # ==========================================
 class EvaluationSchema(BaseModel):
-    score: int = Field(
-        description="지원자의 답변에 대한 공정한 점수 (1점부터 10점까지)"
-    )
+    score: int = Field(description="지원자의 답변에 대한 공정한 점수 (1점부터 10점까지)")
     passed: bool = Field(
-        description="이전 질문의 핵심 요구사항 및 기술적 논리를 충족했는지 여부. 단순히 '모르겠다', '힌트를 달라', '패스'라고 한 경우는 무조건 False여야 합니다."
+        description="이전 질문의 핵심 요구사항 및 기술적 논리를 충족했는지 여부. "
+                    "단순히 '모르겠다', '힌트를 달라', '패스'라고 한 경우는 무조건 False여야 합니다."
     )
     reason: str = Field(
-        description="지원자에게 제공할 상세한 기술 피드백. 강점, 보완할 점, 혹은 오답 시 논리적 힌트의 방향성을 시니어 개발자 선배로서 조언하듯 작성합니다."
+        description="지원자에게 제공할 상세한 기술 피드백. 강점, 보완할 점, 혹은 오답 시 "
+                    "논리적 힌트의 방향성을 시니어 개발자 선배로서 조언하듯 작성합니다."
     )
 
 
@@ -26,8 +26,8 @@ class EvaluationSchema(BaseModel):
 def evaluate_answer(state: InterviewState) -> dict:
     """
     지원자의 답변을 프로젝트 소스코드 맥락과 대조하여 정밀 평가합니다.
-    [치명적 버그 해결]: 유저가 답변을 포기하거나 힌트를 요청하는 경우,
-    LLM을 타지 않고 Python 레이어에서 100% 결정론적으로 오답(Passed=False, Score=1) 처리하여 환각을 차단합니다.
+    [버그 수정]: '어렵다', '도와줘' 같은 단어가 포함된 기술적 답변이
+    자동 오답 처리되는 문제를 해결. 명확한 포기 문구만 즉시 오답 처리합니다.
     """
     tech_stack = ", ".join(state.get("tech_stack", []))
     current_question = state.get("current_question", "이전 질문이 존재하지 않습니다.")
@@ -36,9 +36,18 @@ def evaluate_answer(state: InterviewState) -> dict:
     retry_count = state.get("retry_count", 0)
     chunks = state.get("extracted_chunks", [])
 
-    # 🔴 [치명적 버그 해결 핵심] 포기 발언은 LLM 채점 완전 우회 → 100% 오답 처리
-    surrender_keywords = ["모르겠", "모릅니다", "몰라요", "힌트", "패스", "pass", "답이 뭐", "도와줘", "어렵다", "어려워"]
-    is_surrender = any(kw in user_answer for kw in surrender_keywords) or len(user_answer) < 5
+    # 🔴 [버그 수정] '어렵다', '도와줘' 같은 약한 신호 단어는 짧은 답변(15자 미만)일 때만 포기로 간주
+    strong_giveup_phrases = ["모르겠", "모릅니다", "몰라요", "패스", "pass", "답이 뭐", "정답이 뭐"]
+    hint_request_phrases = ["힌트 주세요", "힌트를 줘", "힌트 줘", "힌트좀", "힌트 좀", "알려줘요"]
+    weak_signal_words = ["어렵다", "어려워", "어려운", "도와줘"]
+
+    has_strong_giveup = any(kw in user_answer for kw in strong_giveup_phrases)
+    has_hint_request = any(kw in user_answer for kw in hint_request_phrases)
+    has_weak_signal_only = (
+        any(kw in user_answer for kw in weak_signal_words) and len(user_answer) < 15
+    )
+    is_too_short = len(user_answer) < 5
+    is_surrender = has_strong_giveup or has_hint_request or has_weak_signal_only or is_too_short
 
     if is_surrender:
         evaluation_result = {
@@ -61,17 +70,34 @@ def evaluate_answer(state: InterviewState) -> dict:
             code_context = "분석 대상 주요 소스코드가 없습니다."
 
         system_msg = (
-            "당신은 컴퓨터공학과 학생들을 위해 기술 면접을 진행하는 IT 대기업의 매우 정교하고 날카로운 시니어 면접관 선배입니다.\n"
-            f"지원자의 기술 스택({tech_stack})과 그들이 직접 작성한 아래 [프로젝트 소스코드 맥락]을 참고하여, "
-            "당신이 던진 질문에 대해 지원자가 기술적으로 올바르고 성실한 답변을 제출했는지 채점해야 합니다.\n\n"
-            "[프로젝트 소스코드 맥락]\n"
+            "당신은 컴퓨터공학과 학생들을 대상으로 기술 면접을 진행하는 IT 대기업의 매우 정교하고 "
+            "날카로운 시니어 면접관 선배입니다. 당신의 채점 결과는 지원자의 학습 방향에 직접 영향을 "
+            "미치므로, 반드시 일관되고 공정한 기준으로 평가해야 합니다.\n\n"
+            f"[지원자 기술 스택]\n{tech_stack if tech_stack else '정보 없음'}\n\n"
+            "[지원자가 직접 작성한 프로젝트 소스코드 맥락]\n"
             "{code_context}\n\n"
-            "채점 기준:\n"
-            "1. 질문에서 물어본 핵심 동작 원리나 아키텍처적 이유를 올바르게 짚었는지 분석하세요.\n"
-            "2. 답변이 부실하거나, '잘 모르겠다', '힌트를 주세요' 등 포기성 발언이 섞여 있다면 가차 없이 passed=False로 판정하고 낮은 점수(1~3점)를 부여하세요.\n"
-            "3. 만약 완벽한 정답은 아니지만 방향성이 유효하고 기술적 근거가 일부 존재한다면, passed=False로 판정하되 격려 섞인 조언과 함께 score를 4~6점 범위에서 책정하세요.\n"
-            "4. 아키텍처 트레이드오프나 동작 논리를 완벽히 방어했다면 passed=True 및 고득점(8~10점)을 부여하세요.\n"
-            "5. 피드백 메시지(reason)는 부드럽고 친절하되, 전문적인 기술 용어(CS 지식)를 짚어주며 지적 호기심을 자극하도록 조언체로 작성해 주세요."
+            "[절대 규칙 - 환각(Hallucination) 금지]\n"
+            "1. 오직 위에 제공된 [프로젝트 소스코드 맥락]과 지원자의 답변만을 근거로 채점하세요.\n"
+            "2. 소스코드 맥락만으로 판단이 부족한 일반적인 CS 지식 질문이라면, "
+            "해당 분야의 정확한 이론적 지식을 기준으로 채점하세요.\n\n"
+            "[채점 기준 - 세부 루브릭]\n"
+            "- 1~3점 (불합격): 질문의 핵심을 전혀 짚지 못했거나, 기술적으로 명백히 틀린 설명을 "
+            "했거나, 포기성 발언만 있는 경우\n"
+            "- 4~6점 (불합격이지만 방향성은 인정): 완벽한 정답은 아니지만 문제의 본질은 정확히 "
+            "인지하고 있고, 최소한의 기술적 근거를 제시한 경우\n"
+            "- 7점 (경계선, 원칙적으로 불합격 처리): 핵심 개념은 맞았지만 구체적인 해결 방법이나 "
+            "실제 구현 레벨의 디테일이 부족한 경우\n"
+            "- 8~10점 (합격): 질문에서 요구한 핵심 동작 원리나 아키텍처적 트레이드오프를 정확하고 "
+            "구체적으로 설명했으며, 실제로 구현 가능한 수준의 해결책까지 제시한 경우\n\n"
+            "[피드백(reason) 작성 지침]\n"
+            "1. 먼저 지원자 답변에서 잘한 점이 있다면 한 문장으로 짚어주세요.\n"
+            "2. 이어서 부족한 부분을 구체적인 기술 용어와 함께 명확히 지적하세요.\n"
+            "3. 불합격(passed=False)인 경우, 정답을 직접 알려주지 말고 단계적인 힌트나 관련 "
+            "키워드만 제시하세요 (소크라테스식 질문법을 사용하세요).\n"
+            "4. 합격(passed=True)인 경우, 정답을 확인해주고 한 단계 더 심화된 개념을 짧게 "
+            "언급하며 격려하세요.\n"
+            "5. 전체 톤은 친절하고 다정한 선배의 어조를 유지하되, 기술적으로 틀린 부분에 대한 "
+            "지적은 절대 타협하지 마세요."
         )
 
         prompt = ChatPromptTemplate.from_messages([
@@ -131,6 +157,8 @@ def generate_feedback_report(state: InterviewState) -> dict:
     history_str = ""
     for idx, chat in enumerate(answer_history):
         history_str += f"[{idx+1}회차 대화]: {chat}\n"
+    if not history_str:
+        history_str = "(면접 대화 기록이 없습니다.)"
 
     system_msg = (
         "당신은 기술 면접 결과를 종합 분석하여 후배에게 피드백 리포트를 작성해 주는 최고의 테크 리드(Tech Lead)이자 컴퓨터공학과 교수입니다.\n"
@@ -142,14 +170,20 @@ def generate_feedback_report(state: InterviewState) -> dict:
         "4. **쉽고 명확한 설명**: 어려운 컴퓨터공학 이론을 후배가 완벽하게 이해할 수 있도록 친절하게 설명해 주세요."
     )
 
+    # 🔴 [버그 수정] f-string 대신 템플릿 변수로 주입 → 답변에 중괄호 포함 시 파싱 오류 방지
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_msg),
-        ("human", f"전체 면접 질문 및 답변 기록:\n{history_str}\n\n위 기록을 바탕으로 완벽한 종합 피드백 리포트를 작성해 주세요.")
+        ("human", "전체 면접 질문 및 답변 기록:\n{history_str}\n\n위 기록을 바탕으로 완벽한 종합 피드백 리포트를 작성해 주세요.")
     ])
 
     chain = prompt | llm
-    response = chain.invoke({})
-    return {"final_report": response.content}
+    try:
+        response = chain.invoke({"history_str": history_str})
+        report_content = response.content
+    except Exception as e:
+        report_content = f"## ⚠️ 리포트 생성 실패\n피드백 리포트를 처리하는 도중 오류가 발생했습니다. (오류: {str(e)})"
+
+    return {"final_report": report_content}
 
 
 # ==========================================
@@ -171,6 +205,8 @@ def generate_final_report(state: InterviewState) -> dict:
     for idx, chat in enumerate(answer_history):
         role = "지원자(유저)" if idx % 2 != 0 else "면접관(AI)"
         history_conversation += f"- {role}: {chat}\n"
+    if not history_conversation:
+        history_conversation = "(면접 대화 기록이 없습니다.)"
 
     code_context = ""
     for chunk in chunks:
@@ -181,10 +217,18 @@ def generate_final_report(state: InterviewState) -> dict:
     result_title = "❌ 면접 중단 (3-Strike 아웃 탈락)" if next_step == "FAIL" else "🎉 면접 최종 완료 (성공 패스)"
 
     system_msg = (
-        "당신은 기술 면접을 마치고 지원자에게 최종 성적표를 전달하는 IT 대기업의 매우 따뜻하고 전문적인 시니어 개발자 멘토입니다.\n"
-        "지원자가 진행한 모의 면접 기록과 제출한 프로젝트 소스코드를 종합 분석하여, 기술적 성장을 위한 '최종 리팩토링 및 CS 학습 가이드라인 리포트'를 마크다운 형식으로 작성해야 합니다.\n\n"
+        "당신은 기술 면접을 마치고 지원자에게 최종 성적표를 전달하는 IT 대기업의 매우 따뜻하고 "
+        "전문적인 시니어 개발자 멘토입니다. 지원자가 진행한 모의 면접 기록과 제출한 프로젝트 "
+        "소스코드를 종합 분석하여, 기술적 성장을 위한 '최종 리팩토링 및 CS 학습 가이드라인 리포트'를 "
+        "마크다운 형식으로 작성해야 합니다.\n\n"
         "[프로젝트 소스코드 맥락]\n"
         "{code_context}\n\n"
+        "[절대 규칙 - 환각 금지]\n"
+        "1. 리포트에 등장하는 모든 파일명, 함수명, 코드 인용은 반드시 위 [프로젝트 소스코드 맥락]에 "
+        "실제로 존재하는 내용이어야 합니다.\n"
+        "2. [실제 진행된 면접 대화록]에 없는 내용을 지원자가 말했다고 임의로 추가하지 마세요.\n"
+        "3. 소스코드 맥락이 비어 있거나 부족하다면, 그 사실을 솔직히 언급하고 일반적인 CS "
+        "학습 가이드 위주로 작성하세요.\n\n"
         "지침:\n"
         "1. 리포트는 반드시 깔끔하고 가독성 좋은 GitHub Markdown 스타일로 작성해 주세요.\n"
         "2. 다음 대제목 구조를 완벽하게 갖추어야 합니다:\n"
@@ -192,7 +236,12 @@ def generate_final_report(state: InterviewState) -> dict:
         "   - ## 💡 핵심 CS 개념 및 오답 노트\n"
         "   - ## 🛠️ 소스코드 리팩토링 제안 (모범 답안 코드 포함)\n"
         "   - ## 🚀 향후 추천 학습 로드맵\n"
-        "3. 아쉽게 탈락했거나 통과한 모든 지원자에게 힘이 되도록 따뜻하고 격려하는 선배의 어조로 작성해 주세요."
+        "3. '## 🛠️ 소스코드 리팩토링 제안' 섹션에서는 반드시 실제로 존재하는 파일명과 코드를 "
+        "인용한 뒤, 개선된 예시 코드를 코드블록으로 제시하세요.\n"
+        "4. '## 🚀 향후 추천 학습 로드맵' 섹션에서는 면접 중 부족했던 개념을 기준으로 구체적인 "
+        "학습 주제 2~3가지를 우선순위와 함께 제시하세요.\n"
+        "5. 아쉽게 탈락했거나 통과한 모든 지원자에게 힘이 되도록 따뜻하고 격려하는 선배의 어조로 "
+        "작성해 주세요."
     )
 
     prompt = ChatPromptTemplate.from_messages([
