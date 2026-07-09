@@ -36,6 +36,7 @@ def extract_active_db_resources() -> tuple:
     """
     기존에 메모리에 기동 중인 VectorService로부터
     Chroma Client와 Embedding Function을 추출합니다.
+    (SQLite Lock 방지 및 임베딩 모델 일치 보장)
     """
     if not get_vector_service:
         return None, None
@@ -189,7 +190,7 @@ def build_github_repo(state: InterviewState) -> dict:
                 raw_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{commit_hash}/{path}"
                 raw_res = requests.get(raw_url, timeout=3)
                 if raw_res.status_code == 200:
-                    code_content = raw_res.text[:800]  # 파일당 800자로 제한 (임베딩 속도 향상)
+                    code_content = raw_res.text[:800]  # 파일당 800자 제한 (임베딩 속도 향상)
 
                     extracted_chunks.append({
                         "file_path": path,
@@ -198,6 +199,7 @@ def build_github_repo(state: InterviewState) -> dict:
                         "desc": f"{path} 소스코드 일부"
                     })
 
+                    # ChromaDB 저장용 (중복 없이 한 번만 추가)
                     documents_to_embed.append(code_content)
                     metadatas_to_embed.append({
                         "file_path": path,

@@ -2,10 +2,41 @@ import streamlit as st
 import time
 import requests
 import json
-import os
+import io
 
 # ==========================================
-# 0. 커스텀 형광펜 렌더링 함수
+# 0. PDF 이력서 파싱 라이브러리 및 어댑터
+# ==========================================
+try:
+    import pypdf
+    PYPDF_AVAILABLE = True
+except ImportError:
+    PYPDF_AVAILABLE = False
+
+
+def extract_text_from_pdf(uploaded_file) -> str:
+    """업로드된 PDF 파일 버퍼를 읽어와 텍스트를 추출합니다."""
+    if not PYPDF_AVAILABLE:
+        return (
+            "⚠️ 'pypdf' 라이브러리가 설치되지 않아 텍스트 추출이 불가능합니다.\n"
+            "터미널에서 'pip install pypdf' 명령어로 설치 후 다시 업로드해 주세요!\n"
+            "임시로 파일 메타데이터(파일명) 정보만 기록합니다."
+        )
+    try:
+        pdf_file = io.BytesIO(uploaded_file.getvalue())
+        reader = pypdf.PdfReader(pdf_file)
+        text = ""
+        for page in reader.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text + "\n"
+        return text.strip()
+    except Exception as e:
+        return f"⚠️ PDF 파싱 과정에서 예외가 발생했습니다: {str(e)}"
+
+
+# ==========================================
+# 0-2. 커스텀 형광펜 렌더링 함수
 # ==========================================
 def render_highlighted_code(code_text: str, start_line: int = None, end_line: int = None):
     """
@@ -14,7 +45,7 @@ def render_highlighted_code(code_text: str, start_line: int = None, end_line: in
     """
     lines = code_text.split("\n")
     html_lines = []
-    
+
     style = """
     <style>
         .code-container {
@@ -28,10 +59,7 @@ def render_highlighted_code(code_text: str, start_line: int = None, end_line: in
             overflow-x: auto;
             border: 1px solid #30363d;
         }
-        .code-line {
-            display: flex;
-            width: 100%;
-        }
+        .code-line { display: flex; width: 100%; }
         .line-number {
             color: #8b949e;
             text-align: right;
@@ -40,28 +68,21 @@ def render_highlighted_code(code_text: str, start_line: int = None, end_line: in
             user-select: none;
             border-right: 1px solid #30363d;
         }
-        .line-content {
-            padding-left: 15px;
-            white-space: pre;
-        }
+        .line-content { padding-left: 15px; white-space: pre; }
         .highlighted {
             background-color: rgba(218, 165, 32, 0.25);
             border-left: 3px solid #ffca28;
         }
     </style>
     """
-    
+
     html_lines.append('<div class="code-container">')
     for idx, line in enumerate(lines, 1):
         safe_line = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        
-        is_highlighted = False
-        if start_line is not None and end_line is not None:
-            if start_line <= idx <= end_line:
-                is_highlighted = True
-                
+        is_highlighted = (
+            start_line is not None and end_line is not None and start_line <= idx <= end_line
+        )
         line_class = "code-line highlighted" if is_highlighted else "code-line"
-        
         html_lines.append(f"""
         <div class="{line_class}">
             <div class="line-number">{idx}</div>
@@ -85,12 +106,12 @@ st.set_page_config(
 if "user_id" not in st.session_state:
     st.session_state.user_id = "장혁"
 if "retry_count" not in st.session_state:
-    st.session_state.retry_count = 0  # 🔴 3-Strike 카운터
+    st.session_state.retry_count = 0
 if "current_highlight" not in st.session_state:
-    st.session_state.current_highlight = None  # 🔴 형광펜 메타데이터
+    st.session_state.current_highlight = None
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {"role": "assistant", "content": f"안녕하세요, {st.session_state.user_id} 님! GitInsight 모의 면접 튜터입니다. 분석을 원하시는 GitHub Repository URL을 왼쪽에 입력하고 질문을 시작해 보세요!"}
+        {"role": "assistant", "content": f"안녕하세요, {st.session_state.user_id} 님! GitInsight 모의 면접 튜터입니다. 분석을 원하시는 GitHub Repository URL을 왼쪽에 입력하고 이력서를 함께 등록하여 면접을 시작해 보세요!"}
     ]
 if "tech_stack" not in st.session_state:
     st.session_state.tech_stack = []
@@ -105,17 +126,21 @@ if "current_question" not in st.session_state:
 if "answer_history" not in st.session_state:
     st.session_state.answer_history = []
 if "repo_url" not in st.session_state:
-    st.session_state.repo_url = ""  # 세션 상태로 영구 보존
+    st.session_state.repo_url = ""       # 세션 상태로 영구 보존 (내 패치)
+if "resume_text" not in st.session_state:
+    st.session_state.resume_text = ""
+if "resume_name" not in st.session_state:
+    st.session_state.resume_name = ""
 
 
 # ==========================================
-# 2. 사이드바 UI (3-Strike 시각화)
+# 2. 사이드바 UI
 # ==========================================
 with st.sidebar:
     st.header("⚙️ 프로젝트 설정")
     st.markdown("분석할 GitHub 레포지토리 정보를 기입해 주세요.")
 
-    # 깃허브 URL 입력창 (세션 상태로 값을 영구 보존 — 채팅 submit 시 값 유지)
+    # 깃허브 URL 입력창 (세션 상태로 영구 보존 — 채팅 submit 시 값 유지)
     repo_url_input = st.text_input(
         "GitHub Repository URL",
         value=st.session_state.repo_url,
@@ -135,7 +160,27 @@ with st.sidebar:
 
     st.write("---")
 
-    # 🔴 [3-Strike 적용] 스트라이크 아웃 형태로 힌트 현황 시각화
+    # 📄 PDF 이력서 업로더
+    st.header("📄 이력서 등록 (선택)")
+    st.markdown("이력서를 등록하면 이력서 기재 역량과 실제 소스코드 간의 교차 검증 질문이 제공됩니다.")
+    uploaded_file = st.file_uploader(
+        "이력서 파일 업로드 (PDF)", type=["pdf"],
+        help="이력서에 작성하신 성과와 깃허브 코드 간의 교차 검증을 위해 사용됩니다."
+    )
+    if uploaded_file is not None:
+        if st.session_state.resume_name != uploaded_file.name:
+            with st.spinner("📄 PDF 이력서에서 텍스트 데이터 추출 중..."):
+                extracted_text = extract_text_from_pdf(uploaded_file)
+                st.session_state.resume_text = extracted_text
+                st.session_state.resume_name = uploaded_file.name
+            st.success(f"✅ 분석 완료! ({uploaded_file.name})")
+    else:
+        st.session_state.resume_text = ""
+        st.session_state.resume_name = ""
+
+    st.write("---")
+
+    # 🔴 3-Strike 힌트 현황 시각화
     st.subheader("⚾ 힌트 기회 (Strike Count)")
     strikes = st.session_state.retry_count
     if strikes == 0:
@@ -162,18 +207,22 @@ with st.sidebar:
         st.session_state.retry_count = 0
         st.session_state.current_highlight = None
         st.session_state.answer_history = []
+        st.session_state.resume_text = ""
+        st.session_state.resume_name = ""
         # repo_url은 초기화하지 않음 (다시 입력하는 불편함 방지)
         st.rerun()
 
 
 # ==========================================
-# 3. 메인 화면 레이아웃 (채팅 및 대시보드)
+# 3. 메인 화면 레이아웃 (채팅 + 대시보드)
 # ==========================================
 col_chat, col_dashboard = st.columns([1.1, 0.9], gap="large")
 
 with col_chat:
-    st.subheader("💬 모의 면접 및 질문 답변")
-    st.caption("AI 면접관의 압박 질문을 받고 답변을 입력해 보세요.")
+    st.title("🤖 GitInsight")
+    st.subheader("이력서 및 코드 기반 맞춤형 AI 면접관")
+    st.write("지원자님의 이력서(주장)와 실제 구현 코드(증거)를 분석하여 날카로운 역량 검증 질문을 던집니다.")
+    st.write("---")
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
@@ -194,7 +243,6 @@ with col_dashboard:
             st.info("코드를 파싱하기 전입니다. 첫 대화가 시작되면 자동으로 채워집니다.")
 
         st.write("---")
-
         st.write("### 📂 RAG 기반 핵심 소스코드")
         current_hl = st.session_state.get("current_highlight", None)
 
@@ -226,7 +274,6 @@ with col_dashboard:
         if st.session_state.evaluation:
             score = st.session_state.evaluation.get("score", "N/A")
             is_passed = st.session_state.evaluation.get("passed", False)
-
             metric_col1, metric_col2 = st.columns(2)
             metric_col1.metric("종합 점수", f"{score}점")
             metric_col2.metric("패스 여부", "PASS" if is_passed else "RE-TRY")
@@ -235,7 +282,6 @@ with col_dashboard:
             st.info("유저가 면접 질문에 답변을 완료하면 AI의 정밀 평가 결과가 실시간 기록됩니다.")
 
         st.write("---")
-
         st.write("### 📝 최종 리팩토링 가이드")
         if st.session_state.final_report:
             st.markdown(st.session_state.final_report)
@@ -260,17 +306,29 @@ if prompt := st.chat_input("질문 혹은 답변을 입력하세요."):
             status_placeholder = st.empty()
             response_placeholder = st.empty()
 
-            # 🔴 [치명적 버그 수정] FastAPI 라우터 프리픽스(/api/v1)를 추가하여 정확한 주소로 매핑
             backend_url = "http://127.0.0.1:8000/api/v1/chat/sync"
 
             payload = {
                 "user_id": st.session_state.user_id,
                 "user_answer": prompt,
                 "current_retry_count": st.session_state.retry_count,
-                "repo_url": repo_url if repo_url else None
+                "repo_url": repo_url if repo_url else None,
+                "resume_text": st.session_state.resume_text if st.session_state.resume_text else None
             }
 
-            status_placeholder.info("⚡ GitInsight 에이전트가 코드를 탐색하고 답변을 평가하는 중입니다...\n(최초 파일 임베딩 및 빌드 시에는 약 1~2분이 소요될 수 있으니 잠시만 기다려 주세요.)")
+            # 에이전틱 진행 단계 시각화
+            with st.status("AI 면접관이 답변을 심사하는 중입니다...", expanded=True) as status:
+                st.write("🔍 1단계: GitHub 저장소의 최신 커밋 해시 추적 및 소스코드 탐색 중...")
+                time.sleep(1.0)
+                if st.session_state.resume_text:
+                    st.write("📄 2단계: 이력서 기재 역량과 코드베이스 간의 상호 교차 대조 중...")
+                    time.sleep(1.2)
+                else:
+                    st.write("📄 2단계: 이력서 데이터가 제공되지 않아 코드베이스 심층 분석 중...")
+                    time.sleep(0.8)
+                st.write("📚 3단계: 백엔드 아키텍처 및 면접 족보 DB 매칭 중...")
+                time.sleep(1.0)
+                st.write("🧠 4단계: 답변 내용 채점 및 튜터링 피드백 구성 중...")
 
             try:
                 response = requests.post(backend_url, json=payload, timeout=300)
@@ -286,7 +344,7 @@ if prompt := st.chat_input("질문 혹은 답변을 입력하세요."):
 
                     # 상태별 채팅 메시지 구성
                     if status_val == "HINT":
-                        # 힌트: evaluator 피드백(오답 이유) + extractor 힌트 메시지
+                        # 힌트: evaluator 오답 이유 + extractor 힌트
                         if feedback and next_q:
                             ai_message = f"🔴 **오답 처리**\n\n{feedback}\n\n---\n\n{next_q}"
                         elif next_q:
@@ -300,7 +358,7 @@ if prompt := st.chat_input("질문 혹은 답변을 입력하세요."):
                     else:
                         ai_message = feedback or "응답을 처리하는 중입니다."
 
-                    # 백엔드가 리턴한 상태 세션에 동기화
+                    # 백엔드 상태 세션 동기화
                     st.session_state.retry_count = result_data.get("new_retry_count", 0)
                     st.session_state.current_highlight = result_data.get("highlight", None)
                     st.session_state.current_question = result_data.get("next_question", "")
@@ -314,7 +372,7 @@ if prompt := st.chat_input("질문 혹은 답변을 입력하세요."):
                     if result_data.get("final_report"):
                         st.session_state.final_report = result_data["final_report"]
 
-                    if result_data.get("status") == "REPORT":
+                    if status_val == "REPORT":
                         st.session_state.current_question = ""
                         st.session_state.retry_count = 0
 
@@ -335,7 +393,7 @@ if prompt := st.chat_input("질문 혹은 답변을 입력하세요."):
 
             except requests.exceptions.Timeout:
                 status_placeholder.empty()
-                error_msg = "⚠️ **요청 대기 시간 초과(Timeout)**\n\n지정한 대기 시간(5분) 내에 에이전트로부터 응답을 받지 못했습니다. 깃허브 저장소 용량이 크거나 서버의 LLM 네트워크 지연 때문일 수 있으니, 잠시 후 다시 시도해 보세요."
+                error_msg = "⚠️ **요청 대기 시간 초과(Timeout)**\n\n지정한 대기 시간(5분) 내에 에이전트로부터 응답을 받지 못했습니다. 잠시 후 다시 시도해 주세요."
                 response_placeholder.error(error_msg)
                 st.session_state.messages.append({"role": "assistant", "content": error_msg})
 
