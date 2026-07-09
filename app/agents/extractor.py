@@ -73,9 +73,11 @@ def extract_interview_question(state: InterviewState) -> dict:
     # ── [핵심] LangGraph 상태에서 이력서 텍스트 획득 및 포맷팅 ─────────────────────
     resume_text = state.get("resume_text", "")
     if resume_text:
+        # 이력서 텍스트 내 중괄호를 이스케이프 → LangChain 템플릿 변수 오인 방지
+        safe_resume = resume_text.replace("{", "{{").replace("}", "}}")
         resume_context = (
             f"--- [지원자 이력서 내용 (Resume)] ---\n"
-            f"{resume_text}\n"
+            f"{safe_resume}\n"
             f"------------------------------------"
         )
     else:
