@@ -1,14 +1,47 @@
 import json
-import json
 import logging
 import traceback
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from app.schemas import ChatRequest, ChatResponse, ChatResponseData, HighlightMetadata
+from app.schemas import ChatRequest, ChatResponse, ChatResponseData, HighlightMetadata, ResetRequest
 from app.graph import create_graph
 
 router = APIRouter()
 graph = create_graph()
+
+
+# ==========================================
+# 0. 면접 기록 초기화 API
+# ==========================================
+@router.post("/chat/reset")
+async def chat_reset(request: ResetRequest):
+    """
+    LangGraph MemorySaver에 저장된 해당 유저의 스레드 상태를 완전히 초기화합니다.
+    프론트엔드 '면접 기록 초기화' 버튼과 연동됩니다.
+    """
+    try:
+        config = {"configurable": {"thread_id": request.user_id}}
+        # 빈 상태로 덮어써서 이전 체크포인트를 무효화
+        await graph.aupdate_state(config, {
+            "answer_history":    [],
+            "current_question":  "",
+            "question_pool":     [],  # 🔴 이전 질문 풀 완전 제거
+            "extracted_chunks":  [],
+            "tech_stack":        [],
+            "evaluation":        {},
+            "final_report":      "",
+            "retry_count":       0,
+            "loop_count":        0,
+            "next_step":         "",
+            "current_highlight": None,
+            "repo_url":          None,  # 🔴 레포 URL도 초기화
+            "resume_text":       None,  # 🔴 이력서도 초기화
+            "repo_commit_hash":  None,  # 🔴 커밋 해시도 초기화
+        })
+        return {"status": "ok", "message": f"{request.user_id} 스레드 초기화 완료"}
+    except Exception as e:
+        logging.error(f"Error in chat_reset: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ==========================================
@@ -53,14 +86,14 @@ async def chat_sync(request: ChatRequest):
         # 상태별 feedback 결정
         if status == "ANSWER_GIVEN" and evaluation:
             feedback = evaluation.get("reason", "")
-        elif status == "HINT" and evaluation:
-            feedback = evaluation.get("reason", "답변이 부족합니다. 힌트를 참고해 다시 시도해 보세요.")
+        elif status in ("HINT", "HINT_GIVEN", "SURRENDER") and evaluation:
+            # 🔴 힌트는 current_question에 이미 포함되어 있으므로 feedback 비우기
+            feedback = ""
         elif status in ("PASS", "FAIL") and evaluation:
             feedback = evaluation.get("reason", "")
         elif status == "REPORT":
             feedback = final_state.get("final_report", "")
         elif not evaluation and next_question:
-            # 첫 질문 생성 직후 (evaluator 미실행)
             feedback = ""
         else:
             feedback = evaluation.get("reason", "") if evaluation else ""

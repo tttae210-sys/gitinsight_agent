@@ -115,9 +115,10 @@ def build_github_repo(state: InterviewState) -> dict:
     except Exception as e:
         logging.error(f"GitHub Commit API Error: {str(e)}")
 
-    # Chroma 컬렉션 네이밍 규칙 준수
+    # Chroma 컬렉션 네이밍 규칙 준수 (레포별 고유 컬렉션)
     safe_repo_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", repo)[:20]
-    collection_name = f"repo-{owner}-{safe_repo_name}-{commit_hash[:10]}".lower()
+    safe_owner = re.sub(r"[^a-zA-Z0-9_\-]", "_", owner)[:20]
+    collection_name = f"repo-{safe_owner}-{safe_repo_name}-{commit_hash[:10]}".lower()
 
     tech_stack = set()
     extracted_chunks = []
@@ -165,7 +166,7 @@ def build_github_repo(state: InterviewState) -> dict:
         tree_res = requests.get(tree_url, headers=headers, timeout=10).json()
         files = tree_res.get("tree", [])
 
-        target_extensions = ('.py', '.js', '.ts', '.java', '.go', '.cpp')
+        target_extensions = ('.py', '.js', '.ts', '.java', '.go', '.cpp', '.html', '.css', '.jsx', '.tsx', '.vue', '.php', '.rb', '.swift', '.kt', '.rs', '.md')
         code_file_count = 0
         documents_to_embed = []
         metadatas_to_embed = []
@@ -182,6 +183,15 @@ def build_github_repo(state: InterviewState) -> dict:
             elif path.endswith(('.ts', '.tsx')): current_lang = "TypeScript"
             elif path.endswith('.java'): current_lang = "Java"
             elif path.endswith('.go'): current_lang = "Go"
+            elif path.endswith('.html'): current_lang = "HTML"
+            elif path.endswith('.css'): current_lang = "CSS"
+            elif path.endswith('.vue'): current_lang = "Vue.js"
+            elif path.endswith('.php'): current_lang = "PHP"
+            elif path.endswith('.rb'): current_lang = "Ruby"
+            elif path.endswith('.swift'): current_lang = "Swift"
+            elif path.endswith('.kt'): current_lang = "Kotlin"
+            elif path.endswith('.rs'): current_lang = "Rust"
+            elif path.endswith('.md'): current_lang = "Markdown"
 
             if current_lang:
                 tech_stack.add(current_lang)

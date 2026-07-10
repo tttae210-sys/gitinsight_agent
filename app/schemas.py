@@ -17,6 +17,7 @@ class HighlightMetadata(BaseModel):
 class InterviewState(TypedDict, total=False):
     user_id: str
     repo_url: Optional[str]
+    repo_commit_hash: Optional[str]  # 🔴 현재 분석 중인 레포의 커밋 해시 (캐시 key)
     tech_stack: List[str]
     extracted_chunks: List[Dict[str, Any]]
     answer_history: List[str]
@@ -44,6 +45,10 @@ class ChatRequest(BaseModel):
     current_retry_count: int = 0
     repo_url: Optional[str] = None
     resume_text: Optional[str] = None  # 📄 프론트엔드에서 파싱해 보내주는 이력서 텍스트
+
+
+class ResetRequest(BaseModel):
+    user_id: str  # 리셋할 LangGraph 스레드 ID
 
 
 # ==========================================

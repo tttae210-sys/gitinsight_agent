@@ -8,17 +8,41 @@ def classify_user_intent(state: InterviewState) -> dict:
     """유저의 입력을 분석하여 START(시작/링크), ANSWER(면접답변), CHAT(일반대화)으로 분류합니다."""
     user_input = state.get("answer_history", [""])[-1].strip() if state.get("answer_history") else ""
     repo_url = state.get("repo_url", "")
+    current_repo_hash = state.get("repo_commit_hash", "")
 
     # 1. 채팅 입력에 깃허브 URL이 직접 포함된 경우 최우선 처리
     github_pattern = r"github\.com/[\w\-]+/[\w\-]+"
     if re.search(github_pattern, user_input):
         urls = re.findall(r'(https?://github\.com/[\w\-]+/[\w\-]+)', user_input)
         extracted_url = urls[0] if urls else user_input
-        return {"next_step": "START", "repo_url": extracted_url}
+        # 🔴 새로운 레포 URL → 기존 상태 완전 초기화
+        return {
+            "next_step": "START",
+            "repo_url": extracted_url,
+            "extracted_chunks": [],
+            "tech_stack": [],
+            "question_pool": [],
+            "current_question": "",
+            "evaluation": {},
+            "retry_count": 0,
+            "repo_commit_hash": None,
+        }
 
-    # 2. 사이드바에서 repo_url이 주입되었고 아직 코드 빌드가 안 된 경우 → START
-    if repo_url and not state.get("extracted_chunks"):
-        return {"next_step": "START", "repo_url": repo_url}
+    # 2. 사이드바에서 repo_url이 주입되었고, 새로운 레포이거나 아직 빌드 안 된 경우 → START
+    if repo_url:
+        # 이미 빌드된 레포와 다른 경우 → 재빌드
+        if not state.get("extracted_chunks") or current_repo_hash is None:
+            return {
+                "next_step": "START",
+                "repo_url": repo_url,
+                "extracted_chunks": [],
+                "tech_stack": [],
+                "question_pool": [],
+                "current_question": "",
+                "evaluation": {},
+                "retry_count": 0,
+                "repo_commit_hash": None,
+            }
 
     # 3. 면접이 진행 중이면 (current_question이 존재하면) 답변 처리
     if state.get("current_question") and state.get("extracted_chunks"):

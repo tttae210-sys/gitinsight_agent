@@ -5,6 +5,9 @@ import json
 import io
 import os
 
+# Docker/로컬 환경 모두 대응: 환경변수 API_BASE_URL이 있으면 그것을 사용, 없으면 로컬 기본값
+API_BASE_URL = os.environ.get("API_BASE_URL", "http://127.0.0.1:8000/api/v1")
+
 # ==========================================
 # 0. PDF 이력서 파싱 라이브러리 및 어댑터
 # ==========================================
@@ -154,6 +157,7 @@ with st.sidebar:
     repo_url_input = st.text_input(
         "GitHub Repository URL",
         value=st.session_state.repo_url,
+        key="repo_url_input_widget",
         placeholder="https://github.com/username/repository",
         help="에이전트가 코드를 파싱하고 모의 면접 족보를 추출할 대상 주소입니다."
     )
@@ -207,6 +211,17 @@ with st.sidebar:
 
     st.header("🛠️ 대화 컨트롤러")
     if st.button("🗑️ 면접 기록 초기화", use_container_width=True):
+        # 1. 백엔드 LangGraph 스레드 상태 리셋 (이전 면접 상태 완전 제거)
+        try:
+            requests.post(
+                f"{API_BASE_URL}/chat/reset",
+                json={"user_id": st.session_state.user_id},
+                timeout=10,
+            )
+        except Exception:
+            pass  # 백엔드 리셋 실패해도 프론트엔드는 초기화 진행
+
+        # 2. 프론트엔드 세션 초기화
         st.session_state.messages = [
             {"role": "assistant", "content": f"대화 기록이 초기화되었습니다. 새로운 면접을 시작하세요, {st.session_state.user_id} 님!"}
         ]
@@ -219,6 +234,7 @@ with st.sidebar:
         st.session_state.answer_history = []
         st.session_state.resume_text = ""
         st.session_state.resume_name = ""
+        # repo_url은 초기화하지 않음 (다시 입력하는 불편함 방지)
         st.rerun()
 
 
@@ -324,7 +340,7 @@ if prompt := st.chat_input("질문 혹은 답변을 입력하세요."):
             status_placeholder = st.empty()
             response_placeholder = st.empty()
 
-            backend_url = "http://127.0.0.1:8000/api/v1/chat/sync"
+            backend_url = f"{API_BASE_URL}/chat/sync"
 
             payload = {
                 "user_id": st.session_state.user_id,
@@ -367,13 +383,12 @@ if prompt := st.chat_input("질문 혹은 답변을 입력하세요."):
                         ai_message = f"✅ **면접 합격{score_text}**\n\n{feedback}"
                     elif status_val == "FAIL":
                         ai_message = f"{feedback}\n\n면접이 종료되었습니다. 우측 리포트 탭에서 상세 피드백을 확인하세요."
-                    elif status_val == "HINT":
-                        if feedback and next_q:
-                            ai_message = f"🔴 **오답 처리**\n\n{feedback}\n\n---\n\n{next_q}"
-                        elif next_q:
-                            ai_message = next_q
-                        else:
-                            ai_message = feedback
+                    elif status_val in ("HINT", "HINT_GIVEN", "SURRENDER"):
+                        # 🔴 힌트는 next_question에 이미 포함되어 있음 — feedback 무시
+                        ai_message = next_q if next_q else "힌트 생성 중..."
+                    elif status_val == "ANSWER_GIVEN":
+                        # 🔴 정답 제공 후 자동으로 다음 질문으로 넘어감
+                        ai_message = feedback if feedback else next_q
                     elif status_val == "REPORT":
                         ai_message = result_data.get("final_report", feedback) or feedback
                     elif next_q:

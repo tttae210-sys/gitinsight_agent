@@ -22,7 +22,15 @@ from app.service.vector_service import get_vector_service
 
 class QuestionItem(BaseModel):
     question: str = Field(description="지원자에게 던질 기술 면접 질문 (한국어 존댓말)")
-    file_path: Optional[str] = Field(None, description="질문과 연관된 소스코드 파일 경로")
+    source: str = Field(
+        description=(
+            "질문 출처 구분: "
+            "'code' (제출된 GitHub 소스코드 기반), "
+            "'resume' (이력서에 기재된 다른 프로젝트/경험 기반)"
+        ),
+        default="code"
+    )
+    file_path: Optional[str] = Field(None, description="질문과 연관된 소스코드 파일 경로 (source='code'일 때만 지정)")
     start_line: Optional[int] = Field(None, description="연관 코드 시작 줄 번호 (1-indexed)")
     end_line: Optional[int] = Field(None, description="연관 코드 끝 줄 번호 (1-indexed)")
     difficulty: str = Field(
@@ -108,39 +116,93 @@ def extract_question_pool(state: InterviewState) -> dict:
     code_context = _build_code_context(chunks, rag_chunks)
 
     # ── 프롬프트 ───────────────────────────────────────────────────────────────
+    has_resume = bool(resume_text)
+
     system_msg = (
-        "당신은 IT 대기업의 10년 차 시니어 기술 면접관입니다.\n"
-        "아래 지원자의 프로젝트 소스코드와 이력서를 철저히 분석하여, "
-        "실전 압박 기술 면접 질문 풀(pool)을 사전에 생성하는 것이 임무입니다.\n\n"
+        "당신은 IT 대기업의 10년 차 시니어 기술 면접관이자 코드 리뷰 전문가입니다. "
+        "지원자의 GitHub 코드와 이력서를 철저히 교차 검증하여 '진짜 실력'을 가려내는 것이 목표입니다.\n\n"
         f"[지원자 기술 스택]\n{tech_stack or '정보 없음'}\n\n"
         f"{resume_context}\n\n"
-        f"[프로젝트 소스코드 문맥 (줄번호 포함)]\n{code_context}\n\n"
-        "[질문 풀 생성 원칙]\n"
-        "1. 질문은 반드시 소스코드 또는 이력서의 실제 내용에 근거해야 합니다. "
-        "   존재하지 않는 로직을 상상해서 만들지 마세요.\n"
-        "2. 단순 이론/정의 질문('REST API란 무엇인가요?')은 금지합니다. "
-        "   반드시 코드의 구체적인 지점을 파고드는 질문을 만드세요.\n"
-        "3. 난이도를 easy → medium → hard 순으로 점진적으로 배치하세요.\n"
-        "4. 이력서와 코드 사이의 괴리(주장 vs 구현)를 날카롭게 짚는 질문을 최소 1개 포함하세요.\n"
-        "5. 동시성/예외처리/메모리/성능/아키텍처 관련 트레이드오프를 다루는 질문을 최소 1개 포함하세요.\n"
-        "6. 질문은 최소 5개, 최대 7개 생성하세요.\n"
-        "7. 연관 코드가 있다면 file_path, start_line, end_line을 정확히 지정하세요 (1~15줄 범위).\n"
-        "8. 모든 질문은 한국어 존댓말로 작성하세요."
+        f"[제출된 GitHub 소스코드 문맥 (줄번호 포함)]\n{code_context}\n\n"
+        "[질문 생성 전략]\n\n"
+        "■ 레벨 1: 코드 표면 이해도 검증 (30%)\n"
+        "  - 제출 코드의 특정 함수/클래스의 역할과 존재 이유\n"
+        "  - 왜 이 라이브러리를 선택했는지\n"
+        "  - 예: '23번째 줄의 async/await를 사용한 이유가 무엇인가요?'\n\n"
+        "■ 레벨 2: 설계 의도 및 트레이드오프 파악 (40%)\n"
+        "  - 이 구조를 선택한 이유와 버린 대안\n"
+        "  - 성능·유지보수성·확장성 중 무엇을 우선했는지\n"
+        "  - 예: 'FastAPI 대신 Django를 쓰지 않은 이유는? DRF와 비교했을 때 트레이드오프는?'\n\n"
+        "■ 레벨 3: 실전 장애 대응 능력 (30% - 압박 질문)\n"
+        "  - 이 코드가 프로덕션 환경에서 어떤 문제를 일으킬 수 있는지\n"
+        "  - 트래픽 100배 증가 시 어떻게 대응할 것인지\n"
+        "  - 예: 'DB 커넥션 풀이 고갈되면 어떤 증상이 나타나고 어떻게 디버깅하시겠습니까?'\n\n"
+        + (
+            "■ 레벨 4: 이력서 교차 검증 (허수 걸러내기)\n"
+            "  - 이력서: 'Redis 캐싱으로 성능 30% 개선' → 질문: '어떤 메트릭으로 측정했나요? 캐시 무효화 전략은?'\n"
+            "  - 이력서: 'MSA 설계 경험' → 질문: '서비스 간 트랜잭션은 어떻게 처리하셨나요? Saga 패턴을 아시나요?'\n"
+            "  - 이력서에 쓴 기술이 실제 코드에 없으면: '이력서에 Kafka 사용 경험을 작성하셨는데 이번 프로젝트엔 왜 안 쓰셨나요?'\n\n"
+            if has_resume else
+            "■ 레벨 4: 소스코드 심화 검증 (이력서 미제공 시)\n"
+            "  - 코드에서 발견되는 잠재적 버그나 성능 문제 지적\n"
+            "  - 예: '이 함수에서 N+1 쿼리 문제가 보이는데 인지하고 계셨나요?'\n\n"
+        )
+        + "■ 레벨 5: 깊이 있는 후속 질문 유도\n"
+        "  - 단답형 불가능한 질문 (왜? 어떻게? 대안은?)\n"
+        "  - 실패 경험 공유 유도 (디버깅 과정, 회고)\n"
+        "  - 예: '이 코드를 6개월 후 다시 본다면 어떤 점을 리팩토링하고 싶으신가요?'\n\n"
+        "[질문 구성 원칙]\n"
+        "질문은 반드시 아래 두 가지 트랙을 혼합하여 생성하세요.\n\n"
+        "■ 트랙 A — GitHub 소스코드 기반 질문 (source='code')\n"
+        "  - 제출된 소스코드의 실제 구현을 파고드는 질문\n"
+        "  - 코드 내 동시성/예외처리/성능/아키텍처 트레이드오프를 다루는 질문 최소 1개 포함\n"
+        "  - 연관 코드가 있으면 file_path, start_line, end_line을 정확히 지정 (1~15줄 범위)\n"
+        "  - 전체 질문의 약 60% 비중\n\n"
+        + (
+            "■ 트랙 B — 이력서 프로젝트/경험 기반 질문 (source='resume')\n"
+            "  - 이력서에 명시된 GitHub URL 이외의 다른 프로젝트, 인턴 경험, 수상 이력 등을 직접 파고드는 질문\n"
+            "  - '이력서에 작성하셨는데 실제로 어떻게 구현하셨나요?', "
+            "'그 프로젝트에서 가장 어려웠던 기술적 챌린지는 무엇이었나요?' 형태로 구체적으로 질문\n"
+            "  - 이력서 주장과 실제 구현 능력 사이의 검증 질문 최소 1개 포함\n"
+            "  - file_path는 null로 설정 (코드 무관)\n"
+            "  - 전체 질문의 약 40% 비중\n\n"
+            if has_resume else
+            "■ 트랙 B — 이력서 미제공: 소스코드 분석 기반 질문으로 100% 구성\n\n"
+        )
+        + "[금지 사항]\n"
+        "❌ 'RESTful API란 무엇인가요?' (단순 암기 질문)\n"
+        "❌ 'Python과 JavaScript의 차이는?' (구글 검색으로 나오는 질문)\n"
+        "❌ 코드에 없는 내용 상상해서 질문하기\n"
+        "❌ 이력서에 없는 내용 상상해서 질문하기\n\n"
+        "[좋은 질문 예시]\n"
+        "✅ '이 프로젝트에서 Exception을 전혀 처리하지 않으셨는데, 실전에서 DB 연결이 끊기면 어떻게 대응하시겠습니까?'\n"
+        "✅ '이력서에 Docker로 배포 자동화라고 쓰셨는데, 멀티 스테이지 빌드는 사용하셨나요? 이미지 크기는 얼마였나요?'\n"
+        "✅ '코드에서 N+1 쿼리 문제가 보이는데 인지하고 계셨나요? 어떻게 해결하시겠습니까?'\n\n"
+        "[공통 원칙]\n"
+        "1. 존재하지 않는 로직이나 이력서에 없는 내용을 상상해서 만들지 마세요.\n"
+        "2. 단순 이론/정의 질문('REST API란?')은 절대 금지합니다.\n"
+        "3. 질문은 정확히 3개만 생성하세요:\n"
+        "   - Easy 난이도: 1개 (기초 개념 확인)\n"
+        "   - Medium 난이도: 1개 (설계 의도 파악)\n"
+        "   - Hard 난이도: 1개 (장애 대응·교차 검증)\n"
+        "4. 모든 질문은 한국어 존댓말로 작성하세요.\n"
+        "5. 첫 번째 질문은 반드시 Easy 난이도로 배치하세요."
     )
 
     messages = [
         SystemMessage(content=system_msg),
-        HumanMessage(content="위 소스코드와 이력서를 분석하여 면접 질문 풀을 생성해 주세요."),
+        HumanMessage(content="위 소스코드와 이력서를 분석하여 두 트랙을 혼합한 면접 질문 풀을 생성해 주세요."),
     ]
 
     try:
         response = structured_llm.invoke(messages)
         question_pool = [
             {
-                "question": q.question,
-                "file_path": q.file_path,
+                "question":   q.question,
+                "source":     q.source,
+                "file_path":  q.file_path,
                 "start_line": q.start_line,
-                "end_line": q.end_line,
+                "end_line":   q.end_line,
                 "difficulty": q.difficulty,
             }
             for q in response.questions
@@ -163,8 +225,18 @@ def extract_question_pool(state: InterviewState) -> dict:
 
     print(f"[question_extractor] 질문 풀 {len(question_pool)}개 생성 완료")
 
-    # 첫 번째 질문을 current_question으로 바로 세팅
-    first = question_pool[0] if question_pool else {}
+    # 🔴 첫 번째 질문은 반드시 Easy 난이도로 시작
+    easy_questions = [q for q in question_pool if q.get("difficulty") == "easy"]
+    other_questions = [q for q in question_pool if q.get("difficulty") != "easy"]
+    
+    if easy_questions:
+        first = easy_questions[0]
+        remaining_pool = easy_questions[1:] + other_questions
+    else:
+        # Easy 질문이 없으면 첫 번째 질문 사용
+        first = question_pool[0] if question_pool else {}
+        remaining_pool = question_pool[1:] if len(question_pool) > 1 else []
+    
     first_question = first.get("question", "")
     first_highlight = None
     if first.get("file_path") and first.get("start_line") is not None:
@@ -177,8 +249,8 @@ def extract_question_pool(state: InterviewState) -> dict:
             }
 
     return {
-        "question_pool": question_pool[1:],   # 첫 질문은 꺼냈으므로 나머지만 저장
+        "question_pool": remaining_pool,
         "current_question": first_question,
         "current_highlight": first_highlight,
-        "loop_count": 1,
+        "loop_count": 0,  # 🔴 0부터 시작 (첫 질문)
     }

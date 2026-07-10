@@ -54,32 +54,71 @@ def chat_node(state: InterviewState) -> dict:
 
 def next_question_node(state: InterviewState) -> dict:
     """
-    question_pool에서 다음 질문을 꺼내 current_question에 세팅합니다.
-    풀이 비어 있으면 면접 종료 신호(next_step='REPORT')를 반환합니다.
+    적응형 난이도 조절 시스템:
+    - 첫 질문은 question_pool에서 꺼냄
+    - 이후 질문은 이전 답변의 점수를 기반으로 실시간 생성
+    
+    점수별 난이도 조절:
+    - 1~4점: Easy (기초 개념 재확인)
+    - 5~7점: Medium (현재 수준 유지)
+    - 8~10점: Hard (심화 개념 도전)
     """
     pool = list(state.get("question_pool", []))
-
+    loop_count = state.get("loop_count", 0)
+    evaluation = state.get("evaluation", {})
+    last_score = evaluation.get("score", 5)  # 기본값 5점
+    
+    # 🔴 질문 풀이 비어있으면 면접 종료
     if not pool:
         return {"next_step": "REPORT"}
 
-    next_q   = pool.pop(0)
-    question = next_q.get("question", "")
+    # 🔴 적응형 난이도 판정
+    if last_score <= 4:
+        target_difficulty = "easy"
+        difficulty_msg = "이전 답변이 부족했으므로 기초 개념을 다시 확인합니다."
+    elif last_score <= 7:
+        target_difficulty = "medium"
+        difficulty_msg = "현재 수준을 유지하여 중급 질문을 드립니다."
+    else:
+        target_difficulty = "hard"
+        difficulty_msg = "훌륭한 답변입니다! 한 단계 더 심화된 질문을 드립니다."
+
+    # 🔴 난이도에 맞는 질문 선택 (없으면 첫 번째 질문)
+    selected_question = None
+    remaining_pool = []
+    
+    for q in pool:
+        if q.get("difficulty", "medium") == target_difficulty and not selected_question:
+            selected_question = q
+        else:
+            remaining_pool.append(q)
+    
+    # 원하는 난이도가 없으면 풀의 첫 번째 질문 사용
+    if not selected_question:
+        selected_question = pool[0]
+        remaining_pool = pool[1:]
+
+    question = selected_question.get("question", "")
     highlight = None
-    if next_q.get("file_path") and next_q.get("start_line") is not None:
-        end = next_q.get("end_line") or next_q.get("start_line")
-        if next_q["start_line"] <= end:
+    if selected_question.get("file_path") and selected_question.get("start_line") is not None:
+        end = selected_question.get("end_line") or selected_question.get("start_line")
+        if selected_question["start_line"] <= end:
             highlight = {
-                "file_path":  next_q["file_path"],
-                "start_line": next_q["start_line"],
+                "file_path":  selected_question["file_path"],
+                "start_line": selected_question["start_line"],
                 "end_line":   end,
             }
+
+    # 🔴 난이도 조절 메시지 추가
+    if loop_count > 0:  # 첫 질문이 아니면 난이도 메시지 표시
+        question = f"**[난이도 조절: {target_difficulty.upper()}]**\n{difficulty_msg}\n\n---\n\n{question}"
 
     return {
         "current_question":  question,
         "current_highlight": highlight,
-        "question_pool":     pool,
+        "question_pool":     remaining_pool,
         "retry_count":       0,
-        "loop_count":        state.get("loop_count", 1) + 1,
+        "loop_count":        loop_count + 1,
         "next_step":         "NEXT_QUESTION_DONE",
     }
 
