@@ -1,5 +1,7 @@
 import json
+import json
 import logging
+import traceback
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from app.schemas import ChatRequest, ChatResponse, ChatResponseData, HighlightMetadata
@@ -89,7 +91,7 @@ async def chat_sync(request: ChatRequest):
         return ChatResponse(status="success", data=response_data)
 
     except Exception as e:
-        logging.error(f"Error in chat_sync: {str(e)}")
+        logging.error(f"Error in chat_sync: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -121,11 +123,17 @@ async def chat_stream(request: ChatRequest):
 
             # 노드별 실시간 상태 메시지
             status_messages = {
-                "classifier": "🎯 1단계: 지원자님의 답변 인텐트를 정밀 분류하는 중입니다...",
-                "builder":    "🔍 2단계: GitHub 저장소를 추적하여 소스코드 구조를 긁어오는 중입니다...",
-                "extractor":  "🧠 3단계: 코드 문맥과 이력서를 대조하여 다음 압박 질문을 생성하는 중입니다...",
-                "evaluator":  "📊 4단계: 시니어 개발자 채점 엔진이 지원자님의 답변을 정밀 채점하는 중입니다...",
-                "reporter":   "📝 최종단계: 면접이 완료되어 맞춤형 리팩토링 리포트를 빌드하는 중입니다...",
+                # ── 전처리 에이전트 ──────────────────────────────────────────
+                "classifier":         "🎯 입력 분석 중: 지원자님의 의도를 파악하고 있습니다...",
+                "builder":            "🔍 코드 수집 중: GitHub 저장소에서 소스코드를 가져오는 중입니다...",
+                "question_extractor": "🧠 질문 생성 중: 소스코드와 이력서를 분석해 면접 질문 풀을 사전 생성하는 중입니다...",
+                # ── 실시간 인터랙션 에이전트 ─────────────────────────────────
+                "evaluator":          "📊 채점 중: 시니어 면접관이 지원자님의 답변을 정밀 평가하는 중입니다...",
+                "hint_agent":         "💡 힌트 생성 중: 소스코드에서 단서를 찾아 힌트를 준비하는 중입니다...",
+                "answer_provider":    "📖 모범 답안 생성 중: 핵심 개념과 코드 기반 해설을 작성하는 중입니다...",
+                "next_question":      "➡️ 다음 질문 준비 중: 질문 풀에서 다음 면접 질문을 꺼내는 중입니다...",
+                "reporter":           "📝 리포트 생성 중: 전체 면접 결과를 종합하여 맞춤형 피드백 리포트를 작성하는 중입니다...",
+                "chat":               "💬 안내 메시지를 준비하는 중입니다...",
             }
 
             async for event in graph.astream(inputs, config=config, stream_mode="updates"):

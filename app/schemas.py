@@ -29,6 +29,11 @@ class InterviewState(TypedDict, total=False):
     current_highlight: Optional[Dict[str, Any]]
     resume_text: Optional[str]  # 📄 에이전트 노드들이 참조할 이력서 원본 텍스트
 
+    # ── 전처리 에이전트가 사전에 생성한 질문 풀 ──────────────────────────────
+    # question_extractor 가 코드 분석 후 생성한 면접 질문 목록.
+    # 실시간 인터랙션 에이전트(evaluator 등)는 이 풀에서 질문을 꺼내어 사용합니다.
+    question_pool: List[Dict[str, Any]]  # [{"question": str, "file_path": str|None, "start_line": int|None, "end_line": int|None}, ...]
+
 
 # ==========================================
 # 2. FastAPI 요청(Request) 규격 정의

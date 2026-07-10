@@ -3,6 +3,7 @@ import time
 import requests
 import json
 import io
+import os
 
 # ==========================================
 # 0. PDF 이력서 파싱 라이브러리 및 어댑터
@@ -36,7 +37,7 @@ def extract_text_from_pdf(uploaded_file) -> str:
 
 
 # ==========================================
-# 0-2. 커스텀 형광펜 렌더링 함수
+# 0-2. 커스텀 형광펜 렌더링 함수 (마크다운 충돌 우회 수정 완료)
 # ==========================================
 def render_highlighted_code(code_text: str, start_line: int = None, end_line: int = None):
     """
@@ -70,25 +71,35 @@ def render_highlighted_code(code_text: str, start_line: int = None, end_line: in
         }
         .line-content { padding-left: 15px; white-space: pre; }
         .highlighted {
-            background-color: rgba(218, 165, 32, 0.25);
+            background-color: rgba(218, 165, 32, 0.25); /* 노란색/골드 하이라이팅 */
             border-left: 3px solid #ffca28;
         }
     </style>
     """
 
+    # 문자열로 들어오는 경우를 위한 방어적 정수 캐스팅
+    try:
+        s_line = int(start_line) if start_line is not None else None
+        e_line = int(end_line) if end_line is not None else None
+    except ValueError:
+        s_line, e_line = None, None
+
     html_lines.append('<div class="code-container">')
     for idx, line in enumerate(lines, 1):
         safe_line = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        
         is_highlighted = (
-            start_line is not None and end_line is not None and start_line <= idx <= end_line
+            s_line is not None and e_line is not None and s_line <= idx <= e_line
         )
         line_class = "code-line highlighted" if is_highlighted else "code-line"
-        html_lines.append(f"""
-        <div class="{line_class}">
-            <div class="line-number">{idx}</div>
-            <div class="line-content">{safe_line if safe_line.strip() != "" else " "}</div>
-        </div>
-        """)
+        
+        # 🔴 [마크다운 컴파일러 우회 버그 픽스] 
+        # 개행 및 탭 들여쓰기 공백을 제거하고 플랫(flat)한 단일행 HTML 문자열로 생성합니다.
+        # 이렇게 함으로써 Streamlit이 들여쓰기를 마크다운 코드블록 문법으로 오인하는 동작을 원천 방어합니다.
+        line_content_val = safe_line if safe_line.strip() != "" else " "
+        html_line = f'<div class="{line_class}"><div class="line-number">{idx}</div><div class="line-content">{line_content_val}</div></div>'
+        html_lines.append(html_line)
+        
     html_lines.append('</div>')
     st.markdown(style + "".join(html_lines), unsafe_allow_html=True)
 
@@ -126,7 +137,7 @@ if "current_question" not in st.session_state:
 if "answer_history" not in st.session_state:
     st.session_state.answer_history = []
 if "repo_url" not in st.session_state:
-    st.session_state.repo_url = ""       # 세션 상태로 영구 보존 (내 패치)
+    st.session_state.repo_url = ""       
 if "resume_text" not in st.session_state:
     st.session_state.resume_text = ""
 if "resume_name" not in st.session_state:
@@ -140,7 +151,6 @@ with st.sidebar:
     st.header("⚙️ 프로젝트 설정")
     st.markdown("분석할 GitHub 레포지토리 정보를 기입해 주세요.")
 
-    # 깃허브 URL 입력창 (세션 상태로 영구 보존 — 채팅 submit 시 값 유지)
     repo_url_input = st.text_input(
         "GitHub Repository URL",
         value=st.session_state.repo_url,
@@ -209,7 +219,6 @@ with st.sidebar:
         st.session_state.answer_history = []
         st.session_state.resume_text = ""
         st.session_state.resume_name = ""
-        # repo_url은 초기화하지 않음 (다시 입력하는 불편함 방지)
         st.rerun()
 
 
@@ -252,10 +261,16 @@ with col_dashboard:
 
                 is_target_file = False
                 hl_start, hl_end = None, None
-                if current_hl and current_hl.get("file_path") == file_path:
-                    is_target_file = True
-                    hl_start = current_hl.get("start_line")
-                    hl_end = current_hl.get("end_line")
+                
+                # 🔴 [정합성 버그 해결] os.path.basename을 사용한 유연한 파일명 매핑 기술 적용
+                if current_hl and current_hl.get("file_path"):
+                    target_file = os.path.basename(current_hl.get("file_path")).lower()
+                    current_chunk_file = os.path.basename(file_path).lower()
+                    
+                    if target_file == current_chunk_file or target_file in file_path.lower():
+                        is_target_file = True
+                        hl_start = current_hl.get("start_line")
+                        hl_end = current_hl.get("end_line")
 
                 expander_title = f"📄 [{idx+1}] {file_path}"
                 if is_target_file:
@@ -353,7 +368,6 @@ if prompt := st.chat_input("질문 혹은 답변을 입력하세요."):
                     elif status_val == "FAIL":
                         ai_message = f"{feedback}\n\n면접이 종료되었습니다. 우측 리포트 탭에서 상세 피드백을 확인하세요."
                     elif status_val == "HINT":
-                        # 힌트: evaluator 오답 이유 + extractor 힌트
                         if feedback and next_q:
                             ai_message = f"🔴 **오답 처리**\n\n{feedback}\n\n---\n\n{next_q}"
                         elif next_q:
@@ -367,7 +381,7 @@ if prompt := st.chat_input("질문 혹은 답변을 입력하세요."):
                     else:
                         ai_message = feedback or "응답을 처리하는 중입니다."
 
-                    # 백엔드 상태 세션 동기화
+                    # 🔴 [순서 교정] rerun() 실행 전 세션 기록과 대화 히스토리 완벽 바인딩 저장 처리
                     st.session_state.retry_count = result_data.get("new_retry_count", 0)
                     st.session_state.current_highlight = result_data.get("highlight", None)
                     st.session_state.current_question = result_data.get("next_question", "")
@@ -385,13 +399,18 @@ if prompt := st.chat_input("질문 혹은 답변을 입력하세요."):
                         st.session_state.current_question = ""
                         st.session_state.retry_count = 0
 
+                    st.session_state.answer_history.append(prompt)
+                    st.session_state.messages.append({"role": "assistant", "content": ai_message})
+
+                    # 점진적 출력 효과 렌더링
                     for word in ai_message.split(" "):
                         full_response = ""
                         full_response += word + " "
                         response_placeholder.markdown(full_response + "▌")
                         time.sleep(0.02)
                     response_placeholder.markdown(ai_message)
-                    st.session_state.messages.append({"role": "assistant", "content": ai_message})
+                    
+                    # 모든 상태 저장 후에 리런 가동
                     st.rerun()
 
                 else:
@@ -417,6 +436,3 @@ if prompt := st.chat_input("질문 혹은 답변을 입력하세요."):
                 error_msg = f"⚠️ **요청 처리 중 예기치 못한 에러 발생**\n\n에러 내용: `{str(e)}`"
                 response_placeholder.error(error_msg)
                 st.session_state.messages.append({"role": "assistant", "content": error_msg})
-
-        st.session_state.answer_history.append(prompt)
-        st.rerun()
