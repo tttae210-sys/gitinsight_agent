@@ -46,6 +46,17 @@ def classify_user_intent(state: InterviewState) -> dict:
 
     # 3. 면접이 진행 중이면 (current_question이 존재하면) 답변 처리
     if state.get("current_question") and state.get("extracted_chunks"):
+        lower_input = user_input.lower()
+        
+        # 🔴 "질문해달라", "질문해줘" 같은 요청은 조기 리턴 (이후 LLM 판단 건너뜀)
+        question_request_keywords = [
+            "질문해", "질문 해", "질문좀", "질문 좀", "질문해줘", "질문 해줘",
+            "물어봐", "물어봐줘", "면접 시작", "면접 질문", "질문 주세요", "질문 줘"
+        ]
+        if any(kw in lower_input for kw in question_request_keywords) and len(user_input) < 30:
+            # 이미 질문이 있으므로 현재 질문을 그대로 유지
+            return {"next_step": "CHAT"}
+        
         # 힌트 없이 다음 질문만 요청하는 시스템 지시 감지
         skip_keywords = [
             "힌트 보여주지마", "힌트 보여주지 마", "힌트 없이", "힌트 말고",
@@ -53,7 +64,6 @@ def classify_user_intent(state: InterviewState) -> dict:
             "그냥 넘어가", "넘어가줘", "skip", "다음으로", "그냥 질문해줘",
             "힌트 필요없어", "힌트 필요 없어", "no hint"
         ]
-        lower_input = user_input.lower()
         if any(kw in lower_input for kw in skip_keywords):
             return {"next_step": "SKIP"}
 

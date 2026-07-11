@@ -42,7 +42,17 @@ from app.agents.reporter import generate_final_report
 # ──────────────────────────────────────────────────────────────────────────────
 
 def chat_node(state: InterviewState) -> dict:
-    """초기 진입 시 레포 URL 입력을 유도하는 기본 캐주얼 챗 노드."""
+    """초기 진입 시 레포 URL 입력을 유도하거나, 이미 질문이 있으면 그대로 유지하는 캐주얼 챗 노드."""
+    current_q = state.get("current_question", "")
+    
+    # 🔴 이미 질문이 생성되어 있으면 그대로 유지
+    if current_q and current_q != "":
+        return {
+            "current_question": current_q,
+            "next_step": "CHAT_DONE",
+        }
+    
+    # 질문이 없으면 초기 안내 메시지
     return {
         "current_question": (
             "안녕하세요! GitInsight AI 모의 면접관입니다. "
@@ -67,6 +77,10 @@ def next_question_node(state: InterviewState) -> dict:
     loop_count = state.get("loop_count", 0)
     evaluation = state.get("evaluation", {})
     last_score = evaluation.get("score", 5)  # 기본값 5점
+    
+    # 🔴 5개 질문 완료 시 면접 종료 (loop_count는 0부터 시작하므로 5가 되면 6번째 질문)
+    if loop_count >= 5:
+        return {"next_step": "REPORT"}
     
     # 🔴 질문 풀이 비어있으면 면접 종료
     if not pool:
@@ -144,7 +158,8 @@ def route_after_evaluator(state: InterviewState) -> str:
     evaluator 채점 결과에 따라 분기합니다.
       PASS           → next_question (다음 질문 꺼내기)
       HINT           → hint_agent
-      FAIL           → reporter (최종 리포트)
+      FAIL           → reporter (3-Strike 아웃)
+      FINAL_REPORT   → reporter (5번째 질문 완료 후 최종 리포트)
       ANSWER_REQUEST → answer_provider
     """
     next_step = state.get("next_step", "HINT")
@@ -154,6 +169,8 @@ def route_after_evaluator(state: InterviewState) -> str:
         return "hint_agent"
     if next_step == "ANSWER_REQUEST":
         return "answer_provider"
+    if next_step == "FINAL_REPORT":
+        return "reporter"
     return "reporter"   # FAIL
 
 

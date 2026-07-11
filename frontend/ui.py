@@ -125,7 +125,7 @@ if "current_highlight" not in st.session_state:
     st.session_state.current_highlight = None
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {"role": "assistant", "content": f"안녕하세요, {st.session_state.user_id} 님! GitInsight 모의 면접 튜터입니다. 분석을 원하시는 GitHub Repository URL을 왼쪽에 입력하고 이력서를 함께 등록하여 면접을 시작해 보세요!"}
+        {"role": "assistant", "content": "안녕하세요, 면접자님! GitInsight 모의 면접 튜터입니다. 분석을 원하시는 GitHub Repository URL을 왼쪽에 입력하고 이력서를 함께 등록하여 면접을 시작해 보세요!"}
     ]
 if "tech_stack" not in st.session_state:
     st.session_state.tech_stack = []
@@ -301,6 +301,8 @@ with col_dashboard:
             st.info("질문과 밀접한 연관이 있는 핵심 파일이 검색되면 여기에 코드가 렌더링됩니다.")
 
     with tab_report:
+        # 🔴 면접 완료 후에도 오른쪽 사이드바에는 종합 리포트 표시하지 않음
+        # 🔴 채팅창에서만 종합 리포트 확인 가능하도록 수정
         st.write("### 📋 현재 답변 평가")
         if st.session_state.evaluation:
             score = st.session_state.evaluation.get("score", "N/A")
@@ -314,13 +316,11 @@ with col_dashboard:
             st.markdown(f"**상세 채점 기준:**\n{st.session_state.evaluation.get('reason', '')}")
         else:
             st.info("유저가 면접 질문에 답변을 완료하면 AI의 정밀 평가 결과가 실시간 기록됩니다.")
-
-        st.write("---")
-        st.write("### 📝 최종 리팩토링 가이드")
+        
+        # 🔴 면접 완료 시 안내 메시지만 표시 (종합 리포트는 채팅창에서만 확인)
         if st.session_state.final_report:
-            st.markdown(st.session_state.final_report)
-        else:
-            st.info("면접의 전 과정이 완료되면 개선 가이드라인 리포트가 생성됩니다.")
+            st.write("---")
+            st.info("🎉 면접이 완료되었습니다! 종합 평가 리포트는 채팅창에서 확인하세요.")
 
 
 # ==========================================
