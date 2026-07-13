@@ -116,8 +116,8 @@ def next_question_node(state: InterviewState) -> dict:
     evaluation = state.get("evaluation", {})
     last_score = evaluation.get("score", 5)  # 기본값 5점
     
-    # 🔴 5개 질문 완료 시 면접 종료 (loop_count는 0부터 시작하므로 5가 되면 6번째 질문)
-    if loop_count >= 5:
+    # 🔴 5개 질문 완료 시 면접 종료 (loop_count는 1부터 시작하므로 6이 되면 면접 종료)
+    if loop_count > 5:
         return {"next_step": "REPORT"}
     
     # 🔴 질문 풀이 비어있으면 면접 종료

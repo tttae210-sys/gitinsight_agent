@@ -256,7 +256,7 @@ def evaluate_answer(state: InterviewState) -> dict:
     # 3-Strike 아웃 판정
     if evaluation["passed"]:
         # 🔴 5번째 질문이면서 합격한 경우 → 피드백 후 바로 리포트
-        if loop_count >= 5:
+        if loop_count == 5:  # 🔴 수정: >= 대신 ==
             next_step = "FINAL_REPORT"
             evaluation["reason"] = (
                 f"✅ **{evaluation['score']}점으로 합격하셨습니다!**\n\n"
@@ -278,7 +278,7 @@ def evaluate_answer(state: InterviewState) -> dict:
             )
         else:
             # 🔴 5번째 질문이면서 불합격한 경우 → 피드백 후 바로 리포트
-            if loop_count >= 5:
+            if loop_count == 5:  # 🔴 수정: >= 대신 ==
                 next_step = "FINAL_REPORT"
                 evaluation["reason"] = (
                     f"❌ **{evaluation['score']}점으로 불합격하셨습니다.**\n\n"

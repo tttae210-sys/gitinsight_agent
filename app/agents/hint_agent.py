@@ -177,9 +177,9 @@ def provide_hint(state: InterviewState) -> dict:
         hint_text = f"💡 **힌트**\n\n소스코드에서 관련 로직을 다시 한 번 살펴보세요. ({e})"
         highlight = None
 
-    # 🔴 힌트 표시 후 같은 질문 유지 (중복 방지: current_question은 그대로 두고 힌트만 추가)
+    # 🔴 힌트 표시 후 같은 질문 유지 (난이도 조절 메시지 없이 순수 재시도 표시)
     return {
-        "current_question":  f"{hint_text}\n\n---\n\n**[재시도] {current_question}**",
+        "current_question":  f"{hint_text}\n\n---\n\n**[재시도]** {current_question}",
         "current_highlight": highlight,
         "next_step":         "HINT_GIVEN",  # 🔴 명시적 완료 상태
     }

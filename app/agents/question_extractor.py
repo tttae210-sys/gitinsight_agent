@@ -53,13 +53,37 @@ def _build_code_context(chunks: list, rag_chunks: list) -> str:
     """state 청크 + RAG 검색 결과를 줄번호 포함 텍스트로 조합합니다."""
     context = ""
 
+    # README.md를 항상 첫 번째로 포함 (기술 스택 정보 포함)
+    readme_added = False
+    
     for chunk in chunks:
         file_path = chunk.get("file_path", "unknown")
         code_text = chunk.get("content") or chunk.get("code", "")
-        context += f"--- File: {file_path} ---\n"
-        for idx, line in enumerate(code_text.split("\n"), 1):
-            context += f"{idx}: {line}\n"
-        context += "\n"
+        
+        # README.md 특별 처리
+        if file_path.endswith("README.md") or "README" in file_path.upper():
+            context = f"--- File: {file_path} ---\n" + context
+            for idx, line in enumerate(code_text.split("\n"), 1):
+                context = f"{idx}: {line}\n" + context
+            context = context + "\n"
+            readme_added = True
+        else:
+            context += f"--- File: {file_path} ---\n"
+            for idx, line in enumerate(code_text.split("\n"), 1):
+                context += f"{idx}: {line}\n"
+            context += "\n"
+
+    # README.md가 청크에 없으면 직접 읽어서 추가
+    if not readme_added:
+        try:
+            with open("README.md", "r", encoding="utf-8") as f:
+                readme_content = f.read()
+                context = f"--- File: README.md ---\n" + context
+                for idx, line in enumerate(readme_content.split("\n"), 1):
+                    context = f"{idx}: {line}\n" + context
+                context = context + "\n"
+        except Exception:
+            pass  # README.md 읽기 실패 시 무시
 
     for i, rc in enumerate(rag_chunks, start=1):
         file_path = rc.get("file_path", "unknown")
@@ -255,6 +279,44 @@ def extract_question_pool(state: InterviewState) -> dict:
         print(f"[question_extractor] 질문 풀 생성 실패, 폴백 사용: {e}")
 
     print(f"[question_extractor] 질문 풀 {len(question_pool)}개 생성 완료")
+    
+    # 🔴 하이라이팅 검증 및 보정
+    for i, q in enumerate(question_pool):
+        question_text = q.get("question", "")
+        
+        # 파일명과 줄 번호가 질문에 포함되어 있는지 검사
+        import re
+        
+        # 패턴 1: "파일명 X~Y번째 줄" 또는 "파일명 X~Y줄"
+        pattern1 = r'(\w+\.\w+)\s+(\d+)~(\d+)(?:번째\s+)?줄'
+        match1 = re.search(pattern1, question_text)
+        
+        # 패턴 2: "파일명 X번째 줄"
+        pattern2 = r'(\w+\.\w+)\s+(\d+)번째\s+줄'
+        match2 = re.search(pattern2, question_text)
+        
+        # 패턴 3: "파일명 X-Y번째 줄"
+        pattern3 = r'(\w+\.\w+)\s+(\d+)-(\d+)번째\s+줄'
+        match3 = re.search(pattern3, question_text)
+        
+        if match1:
+            file_name, start_str, end_str = match1.groups()
+            q["file_path"] = file_name
+            q["start_line"] = int(start_str)
+            q["end_line"] = int(end_str)
+            print(f"[하이라이팅 보정] {file_name} {start_str}~{end_str}줄 → file_path='{file_name}', start_line={start_str}, end_line={end_str}")
+        elif match2:
+            file_name, line_str = match2.groups()
+            q["file_path"] = file_name
+            q["start_line"] = int(line_str)
+            q["end_line"] = int(line_str)
+            print(f"[하이라이팅 보정] {file_name} {line_str}번째 줄 → file_path='{file_name}', start_line={line_str}, end_line={line_str}")
+        elif match3:
+            file_name, start_str, end_str = match3.groups()
+            q["file_path"] = file_name
+            q["start_line"] = int(start_str)
+            q["end_line"] = int(end_str)
+            print(f"[하이라이팅 보정] {file_name} {start_str}-{end_str}번째 줄 → file_path='{file_name}', start_line={start_str}, end_line={end_str}")
 
     # 🔴 첫 번째 질문은 반드시 Easy 난이도로 시작
     easy_questions = [q for q in question_pool if q.get("difficulty") == "easy"]
