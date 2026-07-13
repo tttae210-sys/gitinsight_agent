@@ -65,11 +65,14 @@ async def chat_sync(request: ChatRequest):
         new_history = list(existing_history)
         new_history.append(request.user_answer)
 
-        # 4. LangGraph 입력 구성 (resume_text 포함)
+        # 4. LangGraph 입력 구성 (resume_text 및 면접 목표 정보 포함)
         inputs = {
             "user_id": request.user_id,
             "repo_url": request.repo_url,
             "resume_text": getattr(request, "resume_text", None),  # 이력서 텍스트 주입
+            "target_company": getattr(request, "target_company", None),  # 목표 회사
+            "target_field": getattr(request, "target_field", None),      # 목표 분야
+            "company_values": getattr(request, "company_values", None),  # 기업 인재상
             "answer_history": new_history,
             "retry_count": request.current_retry_count
         }
@@ -154,6 +157,9 @@ async def chat_stream(request: ChatRequest):
                 "user_id": request.user_id,
                 "repo_url": request.repo_url,
                 "resume_text": getattr(request, "resume_text", None),
+                "target_company": getattr(request, "target_company", None),  # 목표 회사
+                "target_field": getattr(request, "target_field", None),      # 목표 분야
+                "company_values": getattr(request, "company_values", None),  # 기업 인재상
                 "answer_history": new_history,
                 "retry_count": request.current_retry_count
             }

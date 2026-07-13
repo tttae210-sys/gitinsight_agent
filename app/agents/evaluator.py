@@ -110,6 +110,21 @@ def evaluate_answer(state: InterviewState) -> dict:
     retry_count      = state.get("retry_count", 0)
     chunks           = state.get("extracted_chunks", [])
     loop_count       = state.get("loop_count", 0)
+    
+    # 🏢 기업 동기 질문인 경우 자동 통과
+    target_company = state.get("target_company", "")
+    if target_company and "지원하게 된 동기" in current_question:
+        return {
+            "evaluation": {
+                "score": 10,
+                "passed": True,
+                "reason": f"환영합니다! {target_company}에 대한 열정이 느껴지네요. 그럼 이제 기술 면접을 시작하겠습니다.",
+                "technical_understanding": 10,
+                "problem_solving": 10,
+            },
+            "next_step": "PASS",
+            "retry_count": 0,
+        }
 
     input_type = _classify_input(user_answer)
 

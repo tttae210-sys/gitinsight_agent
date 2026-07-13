@@ -2,7 +2,8 @@
 전처리 에이전트: QuestionExtractorAgent
 ========================================
 역할: builder 노드가 GitHub 코드를 수집한 직후 단 한 번 실행됩니다.
-     소스코드 + 이력서를 종합 분석하여 면접 질문 풀(question_pool)을 사전에 생성합니다.
+     소스코드 + 이력서 + 기업 인재상 + 분야별 최신 트렌드를 종합 분석하여 
+     면접 질문 풀(question_pool)을 사전에 생성합니다.
 
 실시간 인터랙션 에이전트들은 이 풀에서 질문을 꺼내어 사용하며,
 턴마다 LLM을 호출해 질문을 새로 만들지 않아도 됩니다.
@@ -14,6 +15,13 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from app.schemas import InterviewState
 from app.core.llm import get_llm
 from app.service.vector_service import get_vector_service
+
+# 기업 프로필 및 트렌드 데이터 임포트
+try:
+    from app.data.company_profiles import COMPANY_PROFILES, FIELD_TRENDS
+except ImportError:
+    COMPANY_PROFILES = {}
+    FIELD_TRENDS = {}
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -105,7 +113,7 @@ def extract_question_pool(state: InterviewState) -> dict:
     [전처리 에이전트] 코드 분석 → 질문 풀 사전 생성
 
     builder 실행 후 1회만 호출됩니다.
-    - 소스코드 전체 + 이력서를 LLM에 한 번에 던져 5~7개의 질문을 미리 만들어둡니다.
+    - 소스코드 + 이력서 + 기업 인재상 + 분야별 최신 트렌드를 LLM에 한 번에 던져 5~7개의 질문을 미리 만들어둡니다.
     - 이후 실시간 인터랙션 에이전트(evaluator 흐름)는 이 풀에서 순서대로 꺼내씁니다.
     """
     llm = get_llm(temperature=0.8)
@@ -114,6 +122,11 @@ def extract_question_pool(state: InterviewState) -> dict:
     tech_stack = ", ".join(state.get("tech_stack", []))
     chunks = state.get("extracted_chunks", [])
     repo_url = state.get("repo_url", "")
+    
+    # 🏢 기업 및 분야 정보 추출
+    target_company = state.get("target_company", "")
+    target_field = state.get("target_field", "")
+    company_values = state.get("company_values", "")
 
     # ── 이력서 포맷팅 ──────────────────────────────────────────────────────────
     resume_text = state.get("resume_text", "")
@@ -125,6 +138,44 @@ def extract_question_pool(state: InterviewState) -> dict:
         )
     else:
         resume_context = "제공된 이력서가 없습니다. 소스코드 분석 중심의 질문을 생성하세요."
+
+    # ── 🏢 기업 인재상 및 면접 스타일 컨텍스트 구성 ────────────────────────────
+    company_context = ""
+    if target_company:
+        if company_values.startswith("auto:"):
+            # 사전 정의된 기업의 경우
+            company_name = company_values.replace("auto:", "")
+            if company_name in COMPANY_PROFILES:
+                profile = COMPANY_PROFILES[company_name]
+                company_context = f"""
+--- [목표 기업: {profile['name']}] ---
+인재상: {', '.join(profile['values'])}
+기업 문화: {profile['culture']}
+면접 스타일: {profile['interview_style']}
+기술 포커스: {', '.join(profile['tech_focus'])}
+최근 트렌드: {', '.join(profile['recent_trends'])}
+--------------------------------"""
+        else:
+            # 직접 입력된 기업 정보
+            company_context = f"""
+--- [목표 기업: {target_company}] ---
+인재상/핵심가치: {company_values}
+--------------------------------"""
+    
+    # ── 🎯 분야별 최신 IT 트렌드 컨텍스트 구성 ─────────────────────────────────
+    field_context = ""
+    if target_field and target_field in FIELD_TRENDS:
+        trends = FIELD_TRENDS[target_field]
+        field_context = f"""
+--- [목표 분야: {target_field} - 2024년 최신 트렌드] ---
+최신 트렌드: {', '.join(trends['trends'])}
+핵심 기술: {', '.join(trends['skills'])}
+--------------------------------"""
+    elif target_field:
+        field_context = f"""
+--- [목표 분야: {target_field}] ---
+해당 분야의 최신 기술 동향과 실무 경험을 중심으로 질문을 구성하세요.
+--------------------------------"""
 
     # ── RAG 보강 검색 ──────────────────────────────────────────────────────────
     rag_query = tech_stack or "코드 구조 및 설계"
@@ -141,33 +192,78 @@ def extract_question_pool(state: InterviewState) -> dict:
 
     # ── 프롬프트 ───────────────────────────────────────────────────────────────
     has_resume = bool(resume_text)
+    has_company_info = bool(target_company)
+    has_field_info = bool(target_field)
+
+    # 레벨 3 구성
+    level3_section = ""
+    if has_field_info:
+        level3_section = (
+            f"■ 레벨 3: {target_field} 분야 최신 트렌드 적용 능력 (25%)\n"
+            f"  - 2024년 {target_field} 분야의 최신 기술 동향에 대한 이해도\n"
+            f"  - 현재 프로젝트에 최신 트렌드를 어떻게 적용할 수 있는지\n"
+            f"  - 예: 'Kubernetes 대신 서버리스 아키텍처를 고려해보신 적 있나요?'\n\n"
+        )
+    else:
+        level3_section = (
+            "■ 레벨 3: 실전 장애 대응 능력 (30% - 압박 질문)\n"
+            "  - 이 코드가 프로덕션 환경에서 어떤 문제를 일으킬 수 있는지\n"
+            "  - 트래픽 100배 증가 시 어떻게 대응할 것인지\n\n"
+        )
+
+    # 레벨 4 구성
+    level4_section = ""
+    if has_company_info:
+        level4_base = (
+            f"■ 레벨 4: {target_company} 인재상 검증 (25%)\n"
+            f"  - {target_company}의 인재상과 연결된 기술적/문화적 질문\n"
+            f"  - 해당 기업의 면접 스타일에 맞춘 심층 질문\n"
+        )
+        
+        if target_company == "업스테이지":
+            level4_upstage = (
+                "  - 업스테이지의 경우 Solar LLM, Document AI, Private LLM, RAG 시스템 등 최신 AI 기술에 대한 이해도 검증\n"
+                "  - 예: 'Solar LLM을 이 프로젝트에 적용한다면 어떤 부분에서 성능 향상을 기대할 수 있을까요?'\n"
+                "  - 예: '현재 코드에 RAG 시스템을 통합한다면 어떤 벡터 데이터베이스를 선택하시겠습니까?'\n"
+                "  - 예: 'Document AI 기술로 이 데이터 처리 과정을 자동화한다면 어떤 점이 개선될까요?'\n\n"
+            )
+            level4_section = level4_base + level4_upstage
+        else:
+            level4_other = "  - 예: '사용자 중심 사고로 이 API를 어떻게 개선하시겠습니까?'\n\n"
+            level4_section = level4_base + level4_other
+    else:
+        level4_section = (
+            "■ 레벨 4: 실전 장애 대응 능력 (30% - 압박 질문)\n"
+            "  - 이 코드가 프로덕션 환경에서 어떤 문제를 일으킬 수 있는지\n"
+            "  - 트래픽 100배 증가 시 어떻게 대응할 것인지\n\n"
+        )
 
     system_msg = (
         "당신은 IT 대기업의 10년 차 시니어 기술 면접관이자 코드 리뷰 전문가입니다. "
         "지원자의 GitHub 코드와 이력서를 철저히 교차 검증하여 '진짜 실력'을 가려내는 것이 목표입니다.\n\n"
         f"[지원자 기술 스택]\n{tech_stack or '정보 없음'}\n\n"
         f"{resume_context}\n\n"
+        f"{company_context}\n\n"
+        f"{field_context}\n\n"
         f"[제출된 GitHub 소스코드 문맥 (줄번호 포함)]\n{code_context}\n\n"
         "[질문 생성 전략]\n\n"
-        "■ 레벨 1: 코드 표면 이해도 검증 (30%)\n"
+        "■ 레벨 1: 코드 표면 이해도 검증 (20%)\n"
         "  - 제출 코드의 특정 함수/클래스의 역할과 존재 이유\n"
         "  - 왜 이 라이브러리를 선택했는지\n"
         "  - 예: '23번째 줄의 async/await를 사용한 이유가 무엇인가요?'\n\n"
-        "■ 레벨 2: 설계 의도 및 트레이드오프 파악 (40%)\n"
+        "■ 레벨 2: 설계 의도 및 트레이드오프 파악 (30%)\n"
         "  - 이 구조를 선택한 이유와 버린 대안\n"
         "  - 성능·유지보수성·확장성 중 무엇을 우선했는지\n"
         "  - 예: 'FastAPI 대신 Django를 쓰지 않은 이유는? DRF와 비교했을 때 트레이드오프는?'\n\n"
-        "■ 레벨 3: 실전 장애 대응 능력 (30% - 압박 질문)\n"
-        "  - 이 코드가 프로덕션 환경에서 어떤 문제를 일으킬 수 있는지\n"
-        "  - 트래픽 100배 증가 시 어떻게 대응할 것인지\n"
-        "  - 예: 'DB 커넥션 풀이 고갈되면 어떤 증상이 나타나고 어떻게 디버깅하시겠습니까?'\n\n"
+        + level3_section
+        + level4_section
         + (
-            "■ 레벨 4: 이력서 교차 검증 (허수 걸러내기)\n"
+            "■ 레벨 5: 이력서 교차 검증 (허수 걸러내기)\n"
             "  - 이력서: 'Redis 캐싱으로 성능 30% 개선' → 질문: '어떤 메트릭으로 측정했나요? 캐시 무효화 전략은?'\n"
             "  - 이력서: 'MSA 설계 경험' → 질문: '서비스 간 트랜잭션은 어떻게 처리하셨나요? Saga 패턴을 아시나요?'\n"
             "  - 이력서에 쓴 기술이 실제 코드에 없으면: '이력서에 Kafka 사용 경험을 작성하셨는데 이번 프로젝트엔 왜 안 쓰셨나요?'\n\n"
             if has_resume else
-            "■ 레벨 4: 소스코드 심화 검증 (이력서 미제공 시)\n"
+            "■ 레벨 5: 소스코드 심화 검증 (이력서 미제공 시)\n"
             "  - 코드에서 발견되는 잠재적 버그나 성능 문제 지적\n"
             "  - 예: '이 함수에서 N+1 쿼리 문제가 보이는데 인지하고 계셨나요?'\n\n"
         )
@@ -216,9 +312,19 @@ def extract_question_pool(state: InterviewState) -> dict:
         "✅ '이력서에 Docker로 배포 자동화라고 쓰셨는데, 멀티 스테이지 빌드는 사용하셨나요? 이미지 크기는 얼마였나요?'\n"
         "✅ '코드에서 N+1 쿼리 문제가 보이는데 인지하고 계셨나요? 어떻게 해결하시겠습니까?'\n"
         "✅ 'README.md 16-20번째 줄에 기술 스택이 기재되어 있습니다. FastAPI를 선택한 이유는?' (file_path='README.md', start_line=16, end_line=20)\n"
-        "✅ 'Danielle.html 8~15줄에는 NewJeans 멤버 네비게이션 바가 구현되어 있습니다...' (file_path='Danielle.html', start_line=8, end_line=15)\n"
-        "✅ 'index.html 25~30줄의 반복되는 구조를 컴포넌트화하려면?' (file_path='index.html', start_line=25, end_line=30)\n\n"
-        "[공통 원칙]\n"
+    )
+    
+    # 업스테이지 예시 추가
+    if target_company == "업스테이지":
+        system_msg += (
+            "✅ '업스테이지의 Solar LLM을 이 프로젝트에 통합한다면 어떤 모듈부터 개선하시겠습니까?'\n"
+            "✅ '현재 구현된 로직에 RAG(Retrieval-Augmented Generation)를 적용한다면 벡터 데이터베이스는 어떤 것을 선택하시겠습니까?'\n"
+            "✅ 'Document AI로 이 데이터 처리 파이프라인을 자동화한다면 정확도를 어떻게 측정하시겠습니까?'\n"
+            "✅ 'Private LLM 환경에서 이 API를 배포한다면 보안과 성능 중 어느 것을 우선하시겠습니까?'\n"
+        )
+    
+    system_msg += "\n"
+    system_msg += (
         "1. 존재하지 않는 로직이나 이력서에 없는 내용을 상상해서 만들지 마세요.\n"
         "2. 단순 이론/정의 질문('REST API란?')은 절대 금지합니다.\n"
         "3. 🚨🚨🚨 코드 하이라이팅 필수 규칙 🚨🚨🚨\n"
@@ -234,6 +340,13 @@ def extract_question_pool(state: InterviewState) -> dict:
         "   - Easy 난이도: 2개 (기초 개념 확인)\n"
         "   - Medium 난이도: 2개 (설계 의도 파악)\n"
         "   - Hard 난이도: 1개 (장애 대응·교차 검증)\n"
+    )
+    
+    # 업스테이지 필수 조건 추가
+    if target_company == "업스테이지":
+        system_msg += "   - 🔥 업스테이지 선택 시 필수: 5개 질문 중 최소 2개는 LLM/RAG/Document AI 관련 질문으로 구성\n"
+    
+    system_msg += (
         "6. 모든 질문은 한국어 존댓말로 작성하세요.\n"
         "7. 첫 번째 질문은 반드시 Easy 난이도로 배치하세요.\n"
         "8. 🔥🔥🔥 코드 기반 질문(source='code')은 반드시 파일명과 줄 번호를 질문 텍스트에 포함하고 metadata를 설정하세요 🔥🔥🔥\n"
@@ -279,6 +392,20 @@ def extract_question_pool(state: InterviewState) -> dict:
         print(f"[question_extractor] 질문 풀 생성 실패, 폴백 사용: {e}")
 
     print(f"[question_extractor] 질문 풀 {len(question_pool)}개 생성 완료")
+    
+    # 🏢 기업이 선택된 경우 첫 질문을 기업 지원 동기로 고정
+    if has_company_info and target_company:
+        company_motivation_question = {
+            "question": f"{target_company}에 지원하게 된 동기와 이 회사에서 이루고 싶은 목표를 구체적으로 말씀해 주시겠습니까?",
+            "source": "company",
+            "file_path": None,
+            "start_line": None,
+            "end_line": None,
+            "difficulty": "easy",
+        }
+        # 기업 동기 질문을 맨 앞에 추가
+        question_pool.insert(0, company_motivation_question)
+        print(f"[question_extractor] 기업 지원 동기 질문을 첫 질문으로 추가: {target_company}")
     
     # 🔴 하이라이팅 검증 및 보정
     for i, q in enumerate(question_pool):

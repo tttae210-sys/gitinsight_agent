@@ -29,6 +29,9 @@ class InterviewState(TypedDict, total=False):
     next_step: str
     current_highlight: Optional[Dict[str, Any]]
     resume_text: Optional[str]  # 📄 에이전트 노드들이 참조할 이력서 원본 텍스트
+    target_company: Optional[str]  # 🏢 목표 회사
+    target_field: Optional[str]    # 🎯 목표 분야/직군  
+    company_values: Optional[str]  # 💡 기업 인재상/핵심 가치
 
     # ── 전처리 에이전트가 사전에 생성한 질문 풀 ──────────────────────────────
     # question_extractor 가 코드 분석 후 생성한 면접 질문 목록.
@@ -45,6 +48,9 @@ class ChatRequest(BaseModel):
     current_retry_count: int = 0
     repo_url: Optional[str] = None
     resume_text: Optional[str] = None  # 📄 프론트엔드에서 파싱해 보내주는 이력서 텍스트
+    target_company: Optional[str] = None  # 🏢 목표 회사
+    target_field: Optional[str] = None    # 🎯 목표 분야/직군
+    company_values: Optional[str] = None  # 💡 기업 인재상/핵심 가치
 
 
 class ResetRequest(BaseModel):

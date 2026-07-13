@@ -124,16 +124,16 @@ def next_question_node(state: InterviewState) -> dict:
     if not pool:
         return {"next_step": "REPORT"}
 
-    # 🔴 적응형 난이도 판정
+    # 🔴 적응형 난이도 판정 (힌트 제공 시에는 긍정 피드백 제거)
     if last_score <= 4:
         target_difficulty = "easy"
-        difficulty_msg = "이전 답변이 부족했으므로 기초 개념을 다시 확인합니다."
+        difficulty_msg = ""  # 기초 질문으로 조정
     elif last_score <= 7:
         target_difficulty = "medium"
-        difficulty_msg = "현재 수준을 유지하여 중급 질문을 드립니다."
+        difficulty_msg = ""  # 중급 질문 유지
     else:
         target_difficulty = "hard"
-        difficulty_msg = "훌륭한 답변입니다! 한 단계 더 심화된 질문을 드립니다."
+        difficulty_msg = ""  # 심화 질문으로 상향 (긍정 피드백 제거)
 
     # 🔴 난이도에 맞는 질문 선택 (없으면 첫 번째 질문)
     selected_question = None
@@ -161,8 +161,9 @@ def next_question_node(state: InterviewState) -> dict:
                 "end_line":   end,
             }
 
-    # 🔴 난이도 조절 메시지 추가
-    if loop_count > 0:  # 첫 질문이 아니면 난이도 메시지 표시
+    # 🔴 난이도 조절 메시지 제거 (힌트 시 긍정 피드백 없이 순수 질문만 표시)
+    # 난이도는 백그라운드에서 조정되지만, 사용자에게는 표시하지 않음
+    if loop_count > 0 and difficulty_msg:  # 첫 질문이 아니고 메시지가 있을 때만
         question = f"**[난이도 조절: {target_difficulty.upper()}]**\n{difficulty_msg}\n\n---\n\n{question}"
 
     return {

@@ -261,10 +261,13 @@ with st.sidebar:
             backend_url = f"{API_BASE_URL}/chat/sync"
             payload = {
                 "user_id": st.session_state.user_id,
-                "user_answer": "질문해줘",  # 첫 질문 요청
+                "user_answer": "질문해줢",  # 첫 질문 요청
                 "current_retry_count": 0,
                 "repo_url": repo_url,
-                "resume_text": st.session_state.get("resume_text", None)
+                "resume_text": st.session_state.get("resume_text", None),
+                "target_company": st.session_state.get("target_company", None),
+                "target_field": st.session_state.get("target_field", None),
+                "company_values": st.session_state.get("company_values", None)
             }
             
             try:
@@ -330,6 +333,96 @@ with st.sidebar:
         st.success(f"🔗 연결 성공: {repo_url.split('/')[-1]}")
     else:
         st.warning("⚠️ 레포지토리 주소를 먼저 입력해 주세요.")
+
+    st.write("---")
+
+    # 🏢 목표 회사 및 분야 설정
+    st.header("🏢 면접 목표 설정")
+    st.markdown("목표 회사와 분야를 설정하면 해당 기업 스타일에 맞춘 면접 질문이 제공됩니다.")
+    
+    # 세션 상태 초기화 (새로 추가된 필드들)
+    if "target_company" not in st.session_state:
+        st.session_state.target_company = ""
+    if "target_field" not in st.session_state:
+        st.session_state.target_field = ""
+    if "company_values" not in st.session_state:
+        st.session_state.company_values = ""
+    
+    # 목표 회사 선택 (드롭다운으로 변경)
+    company_options = [
+        "", "카카오", "네이버", "쿠팡", "토스", "업스테이지", "라인", "배달의민족", 
+        "당근마켓", "우아한형제들", "직접입력"
+    ]
+    
+    selected_company = st.selectbox(
+        "목표 회사",
+        options=company_options,
+        index=0 if not st.session_state.target_company else (
+            company_options.index(st.session_state.target_company) 
+            if st.session_state.target_company in company_options 
+            else company_options.index("직접입력")
+        ),
+        help="지원하고자 하는 회사를 선택하세요. 해당 회사의 면접 스타일과 인재상을 반영합니다."
+    )
+    
+    # 직접입력 선택 시 텍스트 입력창 표시
+    if selected_company == "직접입력":
+        custom_company = st.text_input(
+            "회사명 직접 입력",
+            placeholder="예: 스타트업명, 기타 회사...",
+            help="목록에 없는 회사명을 직접 입력하세요."
+        )
+        st.session_state.target_company = custom_company
+    else:
+        st.session_state.target_company = selected_company
+    
+    # 목표 분야/직군 선택 (옵션 확장)
+    target_field = st.selectbox(
+        "목표 분야/직군",
+        options=["", "백엔드 개발", "프론트엔드 개발", "풀스택 개발", "DevOps/인프라", 
+                "데이터 엔지니어", "ML/AI 엔지니어", "모바일 앱 개발", "게임 개발", 
+                "블록체인 개발", "임베디드 개발", "QA/테스트", "기술 리드/아키텍트",
+                "프로덕트 매니저", "UX/UI 디자이너"],
+        index=0 if not st.session_state.target_field else 
+              ["", "백엔드 개발", "프론트엔드 개발", "풀스택 개발", "DevOps/인프라", 
+               "데이터 엔지니어", "ML/AI 엔지니어", "모바일 앱 개발", "게임 개발", 
+               "블록체인 개발", "임베디드 개발", "QA/테스트", "기술 리드/아키텍트",
+               "프로덕트 매니저", "UX/UI 디자이너"].index(st.session_state.target_field) if st.session_state.target_field in ["", "백엔드 개발", "프론트엔드 개발", "풀스택 개발", "DevOps/인프라", "데이터 엔지니어", "ML/AI 엔지니어", "모바일 앱 개발", "게임 개발", "블록체인 개발", "임베디드 개발", "QA/테스트", "기술 리드/아키텍트", "프로덕트 매니저", "UX/UI 디자이너"] else 0,
+        help="지원하고자 하는 직군을 선택하세요. 해당 분야의 최신 트렌드가 반영된 전문 질문이 제공됩니다."
+    )
+    st.session_state.target_field = target_field
+    
+    # 선택된 회사의 인재상 자동 표시 (기업 데이터베이스에서 로드)
+    if st.session_state.target_company and st.session_state.target_company in ["카카오", "네이버", "쿠팡", "토스", "업스테이지", "라인", "배달의민족", "당근마켓", "우아한형제들"]:
+        st.info(f"**{st.session_state.target_company}** 인재상이 자동으로 적용됩니다 📋")
+        # company_values는 자동으로 설정되므로 사용자 입력 불가
+        st.session_state.company_values = f"auto:{st.session_state.target_company}"
+    else:
+        # 기업 인재상/핵심 가치 직접 입력 (사전 정의되지 않은 회사의 경우)
+        company_values = st.text_area(
+            "기업 인재상 / 핵심 가치",
+            value=st.session_state.company_values if not st.session_state.company_values.startswith("auto:") else "",
+            placeholder="예: 사용자 중심 사고, 빠른 실행력, 협업과 소통, 지속적 학습...",
+            help="목표 회사의 인재상이나 핵심 가치를 입력하세요. 이를 바탕으로 문화적 핏을 확인하는 질문이 포함됩니다.",
+            height=80,
+            disabled=st.session_state.target_company in ["카카오", "네이버", "쿠팡", "토스", "업스테이지", "라인", "배달의민족", "당근마켓", "우아한형제들"]
+        )
+        if not st.session_state.company_values.startswith("auto:"):
+            st.session_state.company_values = company_values
+    
+    # 설정 현황 요약 표시
+    if st.session_state.target_company or target_field:
+        with st.expander("🎯 현재 면접 목표 설정", expanded=False):
+            if st.session_state.target_company:
+                st.write(f"**목표 회사:** {st.session_state.target_company}")
+                
+                # 사전 정의된 회사의 경우 상세 정보 표시
+                if st.session_state.target_company in ["카카오", "네이버", "쿠팡", "토스", "업스테이지", "라인", "배달의민족", "당근마켓", "우아한형제들"]:
+                    st.write(f"**인재상:** 자동 적용됨 ✅")
+                    st.write(f"**면접 스타일:** 해당 기업 맞춤형 ✅")
+            if target_field:
+                st.write(f"**목표 분야:** {target_field}")
+                st.write(f"**최신 트렌드:** 자동 반영됨 🔥")
 
     st.write("---")
 
@@ -494,7 +587,10 @@ if prompt := st.chat_input("질문 혹은 답변을 입력하세요."):
                 "user_answer": prompt,
                 "current_retry_count": st.session_state.retry_count,
                 "repo_url": repo_url if repo_url else None,
-                "resume_text": st.session_state.resume_text if st.session_state.resume_text else None
+                "resume_text": st.session_state.resume_text if st.session_state.resume_text else None,
+                "target_company": st.session_state.get("target_company", None),
+                "target_field": st.session_state.get("target_field", None),
+                "company_values": st.session_state.get("company_values", None)
             }
 
             # 에이전틱 진행 단계 시각화
