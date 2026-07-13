@@ -55,27 +55,76 @@ def render_highlighted_code(code_text: str, start_line: int = None, end_line: in
         .code-container {
             background-color: #0e1117;
             color: #c9d1d9;
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 14px;
-            line-height: 1.5;
-            padding: 15px;
-            border-radius: 8px;
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Consolas', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            padding: 20px;
+            border-radius: 12px;
             overflow-x: auto;
             border: 1px solid #30363d;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            margin: 10px 0;
         }
-        .code-line { display: flex; width: 100%; }
+        .code-line { 
+            display: flex; 
+            width: 100%; 
+            transition: background-color 0.2s ease;
+            min-height: 20px;
+            align-items: center;
+        }
+        .code-line:hover {
+            background-color: rgba(56, 139, 253, 0.1);
+        }
         .line-number {
             color: #8b949e;
             text-align: right;
-            width: 40px;
-            padding-right: 15px;
+            width: 45px;
+            padding-right: 12px;
             user-select: none;
             border-right: 1px solid #30363d;
+            font-weight: 500;
+            font-size: 12px;
         }
-        .line-content { padding-left: 15px; white-space: pre; }
+        .line-content { 
+            padding-left: 12px; 
+            white-space: pre-wrap;
+            word-break: break-word;
+            flex: 1;
+        }
         .highlighted {
-            background-color: rgba(218, 165, 32, 0.25); /* 노란색/골드 하이라이팅 */
-            border-left: 3px solid #ffca28;
+            background: linear-gradient(90deg, rgba(255, 193, 7, 0.15) 0%, rgba(255, 193, 7, 0.05) 100%);
+            border-left: 4px solid #ffc107;
+            animation: highlight-pulse 2s ease-in-out;
+            box-shadow: inset 0 0 0 1px rgba(255, 193, 7, 0.2);
+        }
+        .highlighted .line-number {
+            color: #ffc107;
+            font-weight: 600;
+        }
+        .highlighted .line-content {
+            color: #ffffff;
+        }
+        @keyframes highlight-pulse {
+            0% { background: rgba(255, 193, 7, 0.3); }
+            50% { background: rgba(255, 193, 7, 0.15); }
+            100% { background: rgba(255, 193, 7, 0.15); }
+        }
+        .highlight-marker {
+            position: absolute;
+            right: 10px;
+            color: #ffc107;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        .code-header {
+            background-color: #161b22;
+            color: #f0f6fc;
+            padding: 8px 15px;
+            border-radius: 8px 8px 0 0;
+            font-size: 12px;
+            font-weight: 500;
+            border-bottom: 1px solid #30363d;
+            margin-bottom: 0;
         }
     </style>
     """
@@ -87,23 +136,48 @@ def render_highlighted_code(code_text: str, start_line: int = None, end_line: in
     except ValueError:
         s_line, e_line = None, None
 
+    # 하이라이트 범위가 있으면 헤더 추가
+    if s_line is not None and e_line is not None:
+        html_lines.append(f'<div class="code-header">🔍 면접관 지목 영역: {s_line}~{e_line}번째 줄</div>')
+
     html_lines.append('<div class="code-container">')
+    
+    highlight_count = 0
     for idx, line in enumerate(lines, 1):
-        safe_line = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        # HTML 특수 문자 이스케이프
+        safe_line = (line.replace("&", "&amp;")
+                        .replace("<", "&lt;")
+                        .replace(">", "&gt;")
+                        .replace('"', "&quot;")
+                        .replace("'", "&#x27;"))
         
         is_highlighted = (
             s_line is not None and e_line is not None and s_line <= idx <= e_line
         )
-        line_class = "code-line highlighted" if is_highlighted else "code-line"
         
-        # 🔴 [마크다운 컴파일러 우회 버그 픽스] 
-        # 개행 및 탭 들여쓰기 공백을 제거하고 플랫(flat)한 단일행 HTML 문자열로 생성합니다.
-        # 이렇게 함으로써 Streamlit이 들여쓰기를 마크다운 코드블록 문법으로 오인하는 동작을 원천 방어합니다.
+        if is_highlighted:
+            highlight_count += 1
+            line_class = "code-line highlighted"
+            marker = f'<span class="highlight-marker">📍</span>'
+        else:
+            line_class = "code-line"
+            marker = ""
+        
+        # 빈 줄 처리
         line_content_val = safe_line if safe_line.strip() != "" else " "
-        html_line = f'<div class="{line_class}"><div class="line-number">{idx}</div><div class="line-content">{line_content_val}</div></div>'
+        
+        html_line = (f'<div class="{line_class}" style="position: relative;">'
+                    f'<div class="line-number">{idx}</div>'
+                    f'<div class="line-content">{line_content_val}</div>'
+                    f'{marker}</div>')
         html_lines.append(html_line)
         
     html_lines.append('</div>')
+    
+    # 하이라이트된 줄 수 표시
+    if highlight_count > 0:
+        html_lines.append(f'<div style="text-align: center; margin-top: 10px; color: #ffc107; font-size: 12px;">✨ {highlight_count}줄이 하이라이트되었습니다</div>')
+    
     st.markdown(style + "".join(html_lines), unsafe_allow_html=True)
 
 
@@ -118,7 +192,7 @@ st.set_page_config(
 )
 
 if "user_id" not in st.session_state:
-    st.session_state.user_id = "장혁"
+    st.session_state.user_id = "면접자"
 if "retry_count" not in st.session_state:
     st.session_state.retry_count = 0
 if "current_highlight" not in st.session_state:
@@ -151,6 +225,91 @@ if "resume_name" not in st.session_state:
 # 2. 사이드바 UI
 # ==========================================
 with st.sidebar:
+    # 🚀 면접 시작 버튼을 맨 위에 배치
+    st.header("🚀 면접 시작")
+    if st.button("🎯 면접 시작", use_container_width=True):
+        # GitHub URL 확인
+        repo_url = st.session_state.get("repo_url", "").strip()
+        if not repo_url:
+            st.error("⚠️ GitHub Repository URL을 먼저 입력해주세요!")
+            st.stop()
+        
+        # 1. 백엔드 LangGraph 스레드 상태 리셋 (이전 면접 상태 완전 제거)
+        try:
+            requests.post(
+                f"{API_BASE_URL}/chat/reset",
+                json={"user_id": st.session_state.user_id},
+                timeout=10,
+            )
+        except Exception:
+            pass  # 백엔드 리셋 실패해도 프론트엔드는 초기화 진행
+
+        # 2. 프론트엔드 세션 초기화 (메시지는 비워둠)
+        st.session_state.messages = []
+        st.session_state.tech_stack = []
+        st.session_state.extracted_chunks = []
+        st.session_state.evaluation = {}
+        st.session_state.final_report = ""
+        st.session_state.retry_count = 0
+        st.session_state.current_highlight = None
+        st.session_state.answer_history = []
+        st.session_state.resume_text = ""
+        st.session_state.resume_name = ""
+        
+        # 3. 첫 질문 요청을 위한 더미 입력 처리
+        with st.spinner("🤖 AI 면접관이 첫 질문을 준비하고 있습니다..."):
+            backend_url = f"{API_BASE_URL}/chat/sync"
+            payload = {
+                "user_id": st.session_state.user_id,
+                "user_answer": "질문해줘",  # 첫 질문 요청
+                "current_retry_count": 0,
+                "repo_url": repo_url,
+                "resume_text": st.session_state.get("resume_text", None)
+            }
+            
+            try:
+                response = requests.post(backend_url, json=payload, timeout=120)
+                if response.status_code == 200:
+                    response_data = response.json()
+                    result_data = response_data.get("data", {})
+                    
+                    first_question = result_data.get("next_question", "")
+                    if first_question:
+                        # 첫 질문을 바로 메시지에 추가
+                        st.session_state.messages.append({
+                            "role": "assistant", 
+                            "content": f"**[첫 번째 질문]**\n{first_question}"
+                        })
+                        
+                        # 상태 정보 업데이트
+                        st.session_state.retry_count = result_data.get("new_retry_count", 0)
+                        st.session_state.current_highlight = result_data.get("highlight", None)
+                        if result_data.get("tech_stack"):
+                            st.session_state.tech_stack = result_data["tech_stack"]
+                        if result_data.get("extracted_chunks"):
+                            st.session_state.extracted_chunks = result_data["extracted_chunks"]
+                    else:
+                        st.session_state.messages.append({
+                            "role": "assistant", 
+                            "content": "면접 준비가 완료되었습니다. '질문해줘'라고 입력하여 첫 질문을 받아보세요!"
+                        })
+                else:
+                    st.session_state.messages.append({
+                        "role": "assistant", 
+                        "content": "면접 시작 중 오류가 발생했습니다. 다시 시도해주세요."
+                    })
+            except Exception as e:
+                st.session_state.messages.append({
+                    "role": "assistant", 
+                    "content": "면접 시작 중 네트워크 오류가 발생했습니다. 다시 시도해주세요."
+                })
+        
+        # repo_url은 초기화하지 않음 (다시 입력하는 불편함 방지)
+        st.rerun()
+    
+    st.markdown("**새로운 면접을 시작하려면 위 버튼을 먼저 눌러주세요!**")
+    st.write("---")
+
     st.header("⚙️ 프로젝트 설정")
     st.markdown("분석할 GitHub 레포지토리 정보를 기입해 주세요.")
 
@@ -209,34 +368,6 @@ with st.sidebar:
     st.caption("답변이 부족할 때마다 빨간 불이 켜지며 더 구체적인 힌트가 제공됩니다. 3회 실패 시 강사 모드로 정답 해설이 제공됩니다.")
     st.write("---")
 
-    st.header("🛠️ 대화 컨트롤러")
-    if st.button("🗑️ 면접 기록 초기화", use_container_width=True):
-        # 1. 백엔드 LangGraph 스레드 상태 리셋 (이전 면접 상태 완전 제거)
-        try:
-            requests.post(
-                f"{API_BASE_URL}/chat/reset",
-                json={"user_id": st.session_state.user_id},
-                timeout=10,
-            )
-        except Exception:
-            pass  # 백엔드 리셋 실패해도 프론트엔드는 초기화 진행
-
-        # 2. 프론트엔드 세션 초기화
-        st.session_state.messages = [
-            {"role": "assistant", "content": f"대화 기록이 초기화되었습니다. 새로운 면접을 시작하세요, {st.session_state.user_id} 님!"}
-        ]
-        st.session_state.tech_stack = []
-        st.session_state.extracted_chunks = []
-        st.session_state.evaluation = {}
-        st.session_state.final_report = ""
-        st.session_state.retry_count = 0
-        st.session_state.current_highlight = None
-        st.session_state.answer_history = []
-        st.session_state.resume_text = ""
-        st.session_state.resume_name = ""
-        # repo_url은 초기화하지 않음 (다시 입력하는 불편함 방지)
-        st.rerun()
-
 
 # ==========================================
 # 3. 메인 화면 레이아웃 (채팅 + 대시보드)
@@ -278,23 +409,39 @@ with col_dashboard:
                 is_target_file = False
                 hl_start, hl_end = None, None
                 
-                # 🔴 [정합성 버그 해결] os.path.basename을 사용한 유연한 파일명 매핑 기술 적용
+                # 🔴 [정합성 버그 해결] 향상된 파일명 매칭 로직
                 if current_hl and current_hl.get("file_path"):
-                    target_file = os.path.basename(current_hl.get("file_path")).lower()
-                    current_chunk_file = os.path.basename(file_path).lower()
+                    target_file = current_hl.get("file_path").lower()
+                    current_chunk_file = file_path.lower()
                     
-                    if target_file == current_chunk_file or target_file in file_path.lower():
+                    # 다양한 매칭 방식으로 정확도 향상
+                    is_exact_match = os.path.basename(target_file) == os.path.basename(current_chunk_file)
+                    is_path_contains = target_file in current_chunk_file or current_chunk_file in target_file
+                    is_filename_match = os.path.splitext(os.path.basename(target_file))[0] in current_chunk_file
+                    
+                    if is_exact_match or is_path_contains or is_filename_match:
                         is_target_file = True
                         hl_start = current_hl.get("start_line")
                         hl_end = current_hl.get("end_line")
+                        
+                        # 줄 번호 유효성 검사
+                        total_lines = len(chunk.get("content", "").split("\n"))
+                        if hl_start and hl_start > total_lines:
+                            hl_start = max(1, total_lines - 5)  # 마지막 5줄 영역으로 조정
+                        if hl_end and hl_end > total_lines:
+                            hl_end = total_lines
 
                 expander_title = f"📄 [{idx+1}] {file_path}"
                 if is_target_file:
-                    expander_title += " 🔍 [면접관 지목 영역]"
+                    expander_title += " 🔥 [AI 면접관 포커스]"
 
                 with st.expander(expander_title, expanded=is_target_file):
-                    if is_target_file:
+                    if is_target_file and hl_start and hl_end:
+                        st.info(f"🎯 **면접 질문 관련 영역**: {hl_start}~{hl_end}번째 줄")
                         render_highlighted_code(chunk.get("content", ""), start_line=hl_start, end_line=hl_end)
+                    elif is_target_file:
+                        st.warning("⚠️ 하이라이트 정보가 부정확합니다. 전체 코드를 확인하세요.")
+                        st.code(chunk.get("content", ""), language=chunk.get("language", "python"))
                     else:
                         st.code(chunk.get("content", ""), language=chunk.get("language", "python"))
         else:
@@ -386,9 +533,14 @@ if prompt := st.chat_input("질문 혹은 답변을 입력하세요."):
                     elif status_val in ("HINT", "HINT_GIVEN", "SURRENDER"):
                         # 🔴 힌트는 next_question에 이미 포함되어 있음 — feedback 무시
                         ai_message = next_q if next_q else "힌트 생성 중..."
-                    elif status_val == "ANSWER_GIVEN":
+                    elif status_val in ("ANSWER_GIVEN", "NEXT_QUESTION_DONE"):
                         # 🔴 정답 제공 후 자동으로 다음 질문으로 넘어감
-                        ai_message = feedback if feedback else next_q
+                        if feedback and next_q:
+                            ai_message = f"{feedback}\n\n---\n\n**[다음 질문]**\n{next_q}"
+                        elif feedback:
+                            ai_message = feedback
+                        else:
+                            ai_message = next_q or "다음 질문을 준비 중입니다..."
                     elif status_val == "REPORT":
                         ai_message = result_data.get("final_report", feedback) or feedback
                     elif next_q:
@@ -417,12 +569,7 @@ if prompt := st.chat_input("질문 혹은 답변을 입력하세요."):
                     st.session_state.answer_history.append(prompt)
                     st.session_state.messages.append({"role": "assistant", "content": ai_message})
 
-                    # 점진적 출력 효과 렌더링
-                    for word in ai_message.split(" "):
-                        full_response = ""
-                        full_response += word + " "
-                        response_placeholder.markdown(full_response + "▌")
-                        time.sleep(0.02)
+                    # 응답 즉시 출력 (점진적 출력 효과 제거로 잘림 현상 방지)
                     response_placeholder.markdown(ai_message)
                     
                     # 모든 상태 저장 후에 리런 가동

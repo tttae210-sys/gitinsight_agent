@@ -86,6 +86,9 @@ async def chat_sync(request: ChatRequest):
         # 상태별 feedback 결정
         if status == "ANSWER_GIVEN" and evaluation:
             feedback = evaluation.get("reason", "")
+        elif status == "NEXT_QUESTION_DONE" and evaluation:
+            # 🔴 정답 제공 후 다음 질문으로 이동한 경우
+            feedback = evaluation.get("reason", "")
         elif status in ("HINT", "HINT_GIVEN", "SURRENDER") and evaluation:
             # 🔴 힌트는 current_question에 이미 포함되어 있으므로 feedback 비우기
             feedback = ""
@@ -93,7 +96,8 @@ async def chat_sync(request: ChatRequest):
             feedback = evaluation.get("reason", "")
         elif status == "REPORT":
             feedback = final_state.get("final_report", "")
-        elif not evaluation and next_question:
+        elif status == "CHAT" or next_question:
+            # 🔴 CHAT이거나 질문이 있을 때는 feedback을 비움 (질문만 표시)
             feedback = ""
         else:
             feedback = evaluation.get("reason", "") if evaluation else ""

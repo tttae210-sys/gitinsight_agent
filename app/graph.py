@@ -44,19 +44,57 @@ from app.agents.reporter import generate_final_report
 def chat_node(state: InterviewState) -> dict:
     """초기 진입 시 레포 URL 입력을 유도하거나, 이미 질문이 있으면 그대로 유지하는 캐주얼 챗 노드."""
     current_q = state.get("current_question", "")
+    user_input = state.get("answer_history", [""])[-1].strip() if state.get("answer_history") else ""
     
-    # 🔴 이미 질문이 생성되어 있으면 그대로 유지
+    # 🔴 면접 진행 중에 "질문해달라"는 요청이 들어온 경우
     if current_q and current_q != "":
+        lower_input = user_input.lower()
+        question_request_keywords = [
+            "질문해", "질문 해", "질문좀", "질문 좀", "질문해줘", "질문 해줘",
+            "물어봐", "물어봐줘", "면접 시작", "면접 질문", "질문 주세요", "질문 줘",
+            "면접해", "면접해줘", "면접 질문해", "면접 질문해줘"
+        ]
+        
+        is_question_request = any(kw in lower_input for kw in question_request_keywords)
+        
+        if is_question_request:
+            # 🔴 질문 요청에 대한 명확한 응답 - 현재 질문만 간결하게 제시
+            clean_question = current_q
+            
+            # 🔴 힌트나 다른 메시지가 포함된 경우 질문 부분만 추출
+            if "💡 **힌트" in current_q:
+                # 힌트 메시지에서 원래 질문 부분만 추출
+                if "**[재시도]" in current_q:
+                    parts = current_q.split("**[재시도]")
+                    if len(parts) > 1:
+                        clean_question = parts[1].strip()
+                elif "---" in current_q:
+                    parts = current_q.split("---")
+                    if len(parts) > 1:
+                        clean_question = parts[-1].strip()
+            
+            # 🔴 간결한 질문 제시
+            return {
+                "current_question": clean_question,
+                "next_step": "CHAT_DONE",
+            }
+        
+        # 🔴 일반적인 대화인 경우 현재 질문 유지
         return {
             "current_question": current_q,
             "next_step": "CHAT_DONE",
         }
     
-    # 질문이 없으면 초기 안내 메시지
+    # 🔴 면접이 시작되지 않은 경우 - 초기 안내 메시지
     return {
         "current_question": (
-            "안녕하세요! GitInsight AI 모의 면접관입니다. "
-            "면접을 시작하시려면 좌측 설정창에 GitHub Repository URL을 입력해 주세요."
+            "안녕하세요! GitInsight AI 모의 면접관입니다. 🤖\n\n"
+            "면접을 시작하시려면 좌측 설정창에 GitHub Repository URL을 입력해 주세요.\n\n"
+            "📝 **면접 진행 방식:**\n"
+            "1. GitHub 레포지토리 분석\n"
+            "2. 코드 기반 맞춤형 질문 생성\n"
+            "3. 5개 질문 적응형 난이도 면접\n"
+            "4. 상세 피드백 및 개선 방향 제시"
         ),
         "next_step": "CHAT_DONE",
     }
@@ -161,6 +199,7 @@ def route_after_evaluator(state: InterviewState) -> str:
       FAIL           → reporter (3-Strike 아웃)
       FINAL_REPORT   → reporter (5번째 질문 완료 후 최종 리포트)
       ANSWER_REQUEST → answer_provider
+      QUESTION_REPEAT → chat (질문 요청 시 현재 질문 재제시)
     """
     next_step = state.get("next_step", "HINT")
     if next_step == "PASS":
@@ -171,6 +210,8 @@ def route_after_evaluator(state: InterviewState) -> str:
         return "answer_provider"
     if next_step == "FINAL_REPORT":
         return "reporter"
+    if next_step == "QUESTION_REPEAT":
+        return "chat"
     return "reporter"   # FAIL
 
 
@@ -235,6 +276,7 @@ def create_graph():
             "hint_agent":     "hint_agent",
             "answer_provider":"answer_provider",
             "reporter":       "reporter",
+            "chat":           "chat",  # 🔴 질문 요청 시 chat으로 분기
         },
     )
 

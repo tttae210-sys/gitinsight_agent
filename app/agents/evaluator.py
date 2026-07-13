@@ -56,14 +56,25 @@ _WEAK_SIGNALS   = ["어렵다", "어려워", "어려운", "도와줘"]
 
 
 def _classify_input(user_answer: str) -> str:
-    """빠른 규칙 기반 입력 분류 → 'ANSWER_REQUEST' | 'SURRENDER' | 'TECHNICAL'"""
-    # 🔴 "질문해달라" 같은 단순 요청은 무시
-    question_request_only = [
+    """빠른 규칙 기반 입력 분류 → 'ANSWER_REQUEST' | 'QUESTION_REQUEST' | 'SURRENDER' | 'TECHNICAL'"""
+    
+    # 🔴 "질문해달라" 같은 질문 요청은 별도 분류 (힌트와 구분)
+    question_request_keywords = [
         "질문해", "질문 해", "질문좀", "질문 좀", "질문해줘", "질문 해줘",
-        "물어봐", "물어봐줘", "면접 시작", "면접 질문"
+        "물어봐", "물어봐줘", "면접 시작", "면접 질문", "질문 주세요", "질문 줘",
+        "면접해", "면접해줘", "면접 질문해", "면접 질문해줘"
     ]
-    if any(kw in user_answer.lower() for kw in question_request_only) and len(user_answer) < 20:
-        return "SURRENDER"  # 힌트 없이 그냥 현재 질문 유지
+    
+    # 🔴 순수 질문 요청인지 확인 (기술적 내용 없이 질문만 요청)
+    is_question_request = any(kw in user_answer.lower() for kw in question_request_keywords)
+    has_no_technical_content = len(user_answer) < 50 and not any(tech_word in user_answer.lower() for tech_word in [
+        "api", "데이터베이스", "함수", "클래스", "변수", "코드", "로직", "알고리즘", 
+        "성능", "최적화", "버그", "에러", "디버깅", "테스트", "배포", "서버",
+        "프레임워크", "라이브러리", "패턴", "구조", "설계", "아키텍처"
+    ])
+    
+    if is_question_request and has_no_technical_content:
+        return "QUESTION_REQUEST"
     
     if any(kw in user_answer for kw in _ANSWER_REQUEST):
         return "ANSWER_REQUEST"
@@ -101,6 +112,20 @@ def evaluate_answer(state: InterviewState) -> dict:
     loop_count       = state.get("loop_count", 0)
 
     input_type = _classify_input(user_answer)
+
+    # 🔴 질문 요청인 경우 → 현재 질문 그대로 유지하고 CHAT으로 분기
+    if input_type == "QUESTION_REQUEST":
+        return {
+            "evaluation": {
+                "score": 0,
+                "passed": False,
+                "reason": "질문을 다시 확인해주세요.",
+                "technical_understanding": 0,
+                "problem_solving": 0,
+            },
+            "next_step": "QUESTION_REPEAT",  # 새로운 분기
+            "retry_count": retry_count,  # 기존 retry_count 유지
+        }
 
     if input_type == "ANSWER_REQUEST":
         return {

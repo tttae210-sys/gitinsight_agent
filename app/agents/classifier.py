@@ -48,14 +48,22 @@ def classify_user_intent(state: InterviewState) -> dict:
     if state.get("current_question") and state.get("extracted_chunks"):
         lower_input = user_input.lower()
         
-        # 🔴 "질문해달라", "질문해줘" 같은 요청은 조기 리턴 (이후 LLM 판단 건너뜀)
+        # 🔴 "질문해달라", "질문해줘" 같은 요청은 즉시 CHAT으로 처리 (Evaluator 우회)
         question_request_keywords = [
             "질문해", "질문 해", "질문좀", "질문 좀", "질문해줘", "질문 해줘",
-            "물어봐", "물어봐줘", "면접 시작", "면접 질문", "질문 주세요", "질문 줘"
+            "물어봐", "물어봐줘", "면접 시작", "면접 질문", "질문 주세요", "질문 줘",
+            "면접해", "면접해줘", "면접 질문해", "면접 질문해줘"
         ]
-        if any(kw in lower_input for kw in question_request_keywords) and len(user_input) < 30:
-            # 이미 질문이 있으므로 현재 질문을 그대로 유지
-            return {"next_step": "CHAT"}
+        
+        # 🔴 질문 요청 키워드가 포함된 경우 무조건 CHAT 처리 (길이 무관)
+        if any(kw in lower_input for kw in question_request_keywords):
+            # 🔴 질문 요청이면 현재 질문을 바로 반환 (evaluation은 빈 값으로)
+            return {
+                "next_step": "CHAT",
+                "current_question": state.get("current_question", ""),
+                "retry_count": state.get("retry_count", 0),  # retry_count 유지
+                "evaluation": {}  # 🔴 빈 evaluation으로 변경
+            }
         
         # 힌트 없이 다음 질문만 요청하는 시스템 지시 감지
         skip_keywords = [

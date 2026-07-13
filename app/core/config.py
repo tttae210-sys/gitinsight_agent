@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     # 2. API Keys 및 LLM 설정 (OpenAI와 Upstage Solar를 모두 유연하게 지원)
     OPENAI_API_KEY: Optional[str] = None
     UPSTAGE_API_KEY: str  # 필수 값으로 지정 (없으면 서버 시작 시 에러 발생시켜 방어)
-    LLM_MODEL: str = "gpt-4o"
+    LLM_MODEL: str = "gpt-3.5-turbo"
     
     # 3. Vector DB 로컬 경로
     CHROMA_DB_DIR: str = "./chroma_db"
