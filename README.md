@@ -1,4 +1,4 @@
-** 🤖 GitInsight Agent
+🤖 GitInsight Agent
 
 GitHub 소스코드 분석 및 이력서 교차 검증 기반 AI 모의 기술면접 에이전트
 
