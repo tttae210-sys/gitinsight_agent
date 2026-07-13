@@ -1,3 +1,7 @@
+** 🤖 GitInsight Agent
+
+GitHub 소스코드 분석 및 이력서 교차 검증 기반 AI 모의 기술면접 에이전트
+
 📌 1. 프로젝트 개요 (Introduction)
 
 GitInsight Agent는 지원자의 이력서(주장, Claim)와 실제 GitHub 저장소의 소스코드(증거, Proof)를 실시간으로 교차 분석하여, 단순 암기 위주의 기술 면접을 탈피하고 실무 역량을 팩트 기반으로 정밀 검증하는 AI 모의면접 플랫폼입니다.
