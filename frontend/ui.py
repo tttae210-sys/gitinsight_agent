@@ -350,7 +350,7 @@ with st.sidebar:
     
     # 목표 회사 선택 (드롭다운으로 변경)
     company_options = [
-        "", "카카오", "네이버", "쿠팡", "토스", "업스테이지(세계 최고 기업)", "라인", "배달의민족", 
+        "", "카카오", "네이버", "쿠팡", "토스", "업스테이지", "라인", "배달의민족", 
         "당근마켓", "우아한형제들", "직접입력"
     ]
     
@@ -374,9 +374,7 @@ with st.sidebar:
         )
         st.session_state.target_company = custom_company
     else:
-        # "업스테이지(세계 최고 기업)" 선택 시 "업스테이지"로 정규화
-        normalized_company = selected_company.replace("(세계 최고 기업)", "").strip()
-        st.session_state.target_company = normalized_company
+        st.session_state.target_company = selected_company
     
     # 목표 분야/직군 선택 (옵션 확장)
     target_field = st.selectbox(
