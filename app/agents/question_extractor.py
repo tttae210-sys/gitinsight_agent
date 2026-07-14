@@ -279,14 +279,14 @@ def extract_question_pool(state: InterviewState) -> dict:
         "  - 🔴🔴🔴 필수: 코드 기반 질문은 반드시 파일명과 줄 번호를 질문 텍스트에 포함하세요 🔴🔴🔴\n"
         "  - 🔴🔴🔴 필수: 질문에 파일명과 줄 번호가 포함되면 100% 확률로 file_path, start_line, end_line을 설정하세요 🔴🔴🔴\n"
         "  - 🔴🔴🔴 코드 하이라이팅 예시 (반드시 따라하세요): 🔴🔴🔴\n"
-        "    • 질문: 'README.md 16~20번째 줄에 기술 스택이 기재되어 있습니다. FastAPI를 선택한 이유는?'\n"
+        "    • 질문: 'README.md 16-20번째 줄에 기술 스택이 기재되어 있습니다. FastAPI를 선택한 이유는?'\n"
         "      → file_path='README.md', start_line=16, end_line=20\n"
-        "    • 질문: 'Danielle.html 8~15줄에는 NewJeans 멤버 네비게이션 바가 구현되어 있습니다...'\n"
+        "    • 질문: 'Danielle.html 8-15줄에는 NewJeans 멤버 네비게이션 바가 구현되어 있습니다...'\n"
         "      → file_path='Danielle.html', start_line=8, end_line=15\n"
         "    • 질문: 'app.py 25번째 줄에서 user_id를 하드코딩하고 있습니다...'\n"
         "      → file_path='app.py', start_line=25, end_line=25\n"
         "  - 🚨 코드 기반 질문 생성 규칙:\n"
-        "    1. 질문 텍스트에 반드시 '[파일명] [줄번호]~[줄번호]' 또는 '[파일명] [줄번호]번째 줄' 형태로 명시\n"
+        "    1. 질문 텍스트에 반드시 '[파일명] [줄번호]-[줄번호]' 또는 '[파일명] [줄번호]번째 줄' 형태로 명시\n"
         "    2. file_path는 실제 파일명과 정확히 일치\n"
         "    3. start_line, end_line은 1-based 인덱스\n"
         "    4. 단일 줄이면 start_line = end_line\n"
@@ -329,11 +329,11 @@ def extract_question_pool(state: InterviewState) -> dict:
         "2. 단순 이론/정의 질문('REST API란?')은 절대 금지합니다.\n"
         "3. 🚨🚨🚨 코드 하이라이팅 필수 규칙 🚨🚨🚨\n"
         "   질문 내용에 특정 파일과 줄 번호를 언급할 때는 반드시 해당 정보를 metadata에 포함하세요:\n"
-        "   - 질문 텍스트 예: 'README.md 16~20번째 줄에 기술 스택이...' \n"
+        "   - 질문 텍스트 예: 'README.md 16-20번째 줄에 기술 스택이...' \n"
         "     → file_path='README.md', start_line=16, end_line=20\n"
         "   - 질문 텍스트 예: 'app.py 25번째 줄에서 user_id를...' \n"
         "     → file_path='app.py', start_line=25, end_line=25\n"
-        "   - 질문 텍스트 예: 'Danielle.html 8~15줄에는 네비게이션이...' \n"
+        "   - 질문 텍스트 예: 'Danielle.html 8-15줄에는 네비게이션이...' \n"
         "     → file_path='Danielle.html', start_line=8, end_line=15\n"
         "4. 🔴 질문 텍스트에 파일명과 줄 번호가 포함되면 100% 확률로 file_path, start_line, end_line을 설정하세요.\n"
         "5. 질문은 정확히 5개만 생성하세요:\n"
@@ -353,7 +353,7 @@ def extract_question_pool(state: InterviewState) -> dict:
         "9. 파일 경로는 실제 존재하는 파일명과 정확히 일치해야 합니다.\n"
         "10. 🚨 코드 하이라이팅 검증:\n"
         "    - 질문에 'X파일 Y줄' 형태가 있으면 → file_path='X파일', start_line=Y, end_line=Y\n"
-        "    - 질문에 'X파일 Y~Z줄' 형태가 있으면 → file_path='X파일', start_line=Y, end_line=Z\n"
+        "    - 질문에 'X파일 Y-Z줄' 형태가 있으면 → file_path='X파일', start_line=Y, end_line=Z\n"
         "    - 질문에 'X파일 Y번째 줄' 형태가 있으면 → file_path='X파일', start_line=Y, end_line=Y"
     )
 
@@ -414,8 +414,8 @@ def extract_question_pool(state: InterviewState) -> dict:
         # 파일명과 줄 번호가 질문에 포함되어 있는지 검사
         import re
         
-        # 패턴 1: "파일명 X~Y번째 줄" 또는 "파일명 X~Y줄"
-        pattern1 = r'(\w+\.\w+)\s+(\d+)~(\d+)(?:번째\s+)?줄'
+        # 패턴 1: "파일명 X-Y번째 줄" 또는 "파일명 X-Y줄"
+        pattern1 = r'(\w+\.\w+)\s+(\d+)-(\d+)(?:번째\s+)?줄'
         match1 = re.search(pattern1, question_text)
         
         # 패턴 2: "파일명 X번째 줄"
@@ -431,7 +431,7 @@ def extract_question_pool(state: InterviewState) -> dict:
             q["file_path"] = file_name
             q["start_line"] = int(start_str)
             q["end_line"] = int(end_str)
-            print(f"[하이라이팅 보정] {file_name} {start_str}~{end_str}줄 → file_path='{file_name}', start_line={start_str}, end_line={end_str}")
+            print(f"[하이라이팅 보정] {file_name} {start_str}-{end_str}줄 → file_path='{file_name}', start_line={start_str}, end_line={end_str}")
         elif match2:
             file_name, line_str = match2.groups()
             q["file_path"] = file_name
